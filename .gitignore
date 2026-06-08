@@ -1,0 +1,11 @@
+node_modules/
+dist/
+auth/
+auth_backups/
+data/
+logs/
+*.log
+.env
+.DS_Store
+auth-archive/
+docs/plans/

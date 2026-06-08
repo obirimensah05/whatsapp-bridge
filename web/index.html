@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>whatsapp-bridge</title>
+<style>
+  :root {
+    --bg: #0e1014;
+    --panel: #161a22;
+    --panel-2: #1c2230;
+    --border: #232a3a;
+    --text: #e6e8eb;
+    --muted: #8a93a4;
+    --accent: #25d366;
+    --in-bubble: #1f2535;
+    --out-bubble: #14573b;
+    --danger: #ff5d6c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
+  button { cursor: pointer; }
+  input, textarea, button, select { font: inherit; color: inherit; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #2a3142; border-radius: 4px; }
+
+  /* Login */
+  #login { display: none; height: 100%; align-items: center; justify-content: center; }
+  #login.visible { display: flex; }
+  #login .card { background: var(--panel); padding: 32px; border-radius: 12px; border: 1px solid var(--border); width: 380px; }
+  #login h1 { margin: 0 0 8px; font-size: 18px; }
+  #login p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+  #login input { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-family: ui-monospace, monospace; font-size: 12px; }
+  #login button { margin-top: 12px; width: 100%; padding: 10px; background: var(--accent); color: #0e1014;
+    border: none; border-radius: 6px; font-weight: 600; }
+  #login .err { margin-top: 10px; color: var(--danger); font-size: 12px; min-height: 16px; }
+
+  /* App */
+  #app { display: none; height: 100%; flex-direction: column; }
+  #app.visible { display: flex; }
+  header { display: flex; align-items: center; padding: 10px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--border); gap: 12px; }
+  header .brand { font-weight: 600; }
+  header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  header .dot.ok { background: var(--accent); }
+  header select { background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 4px 8px; }
+  header .spacer { flex: 1; }
+  header button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 6px; }
+  #update-pill { font-size: 12px; padding: 3px 8px; border-radius: 999px;
+    background: #5b3a08; color: #ffd58a; border: 1px solid #7a5012; text-decoration: none; }
+  #update-pill:hover { background: #7a5012; }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  aside { width: 340px; background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; }
+  aside .search { padding: 10px; border-bottom: 1px solid var(--border); }
+  aside input { width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); }
+  aside .list { flex: 1; overflow-y: auto; }
+  .convo { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer;
+    border-bottom: 1px solid #1a1f2a; }
+  .convo:hover { background: var(--panel-2); }
+  .convo.active { background: #20283a; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; background: #2a3142; color: var(--text);
+    display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; font-size: 14px; }
+  .avatar.group { background: #2a3142; color: var(--accent); }
+  .convo .meta { flex: 1; min-width: 0; }
+  .convo .name { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+  .convo .name .group-tag { font-size: 10px; color: var(--accent); background: #122c1f; padding: 1px 5px;
+    border-radius: 3px; flex-shrink: 0; }
+  .convo .last { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; margin-top: 2px; }
+  .convo .phone { color: var(--accent); font-size: 11px; opacity: 0.75; margin-top: 1px;
+    font-family: ui-monospace, monospace; }
+  .convo .ts { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+  .convo .badge { background: var(--accent); color: #0e1014; border-radius: 10px; padding: 1px 7px;
+    font-size: 11px; font-weight: 700; margin-left: auto; }
+
+  section.chat { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg);
+    overflow: hidden; }
+  #chat-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #chat-pane.placeholder { align-items: center; justify-content: center; color: var(--muted); }
+  .chat-header { padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+    display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  .chat-header .name { font-weight: 600; }
+  .chat-header .sub { color: var(--muted); font-size: 12px; }
+  .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 6px;
+    min-height: 0; }
+  .messages .empty { margin: auto; color: var(--muted); }
+  .bubble { max-width: 70%; padding: 8px 12px; border-radius: 12px; word-wrap: break-word;
+    white-space: pre-wrap; }
+  .bubble .meta { font-size: 10px; color: var(--muted); margin-top: 4px; text-align: right; }
+  .bubble.in { background: var(--in-bubble); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .bubble.out { background: var(--out-bubble); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .bubble.in .sender { font-size: 11px; color: var(--accent); margin-bottom: 2px; }
+  .day-divider { align-self: center; background: #1a1f2a; color: var(--muted); padding: 2px 10px;
+    border-radius: 10px; font-size: 11px; margin: 8px 0; }
+  .non-text { color: var(--muted); font-style: italic; }
+  .bubble img.media { max-width: 100%; border-radius: 8px; display: block; cursor: pointer; }
+  .bubble video.media, .bubble audio.media { max-width: 100%; border-radius: 8px; display: block; }
+  .bubble .doc { display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
+  .bubble .doc a { color: var(--text); text-decoration: underline; }
+  .bubble .reply-quote { background: rgba(255,255,255,0.06); border-left: 3px solid var(--accent);
+    padding: 6px 8px; margin-bottom: 6px; border-radius: 4px; font-size: 12px; color: var(--muted); }
+  .bubble.deleted { opacity: 0.55; font-style: italic; }
+  .bubble .ticks { display: inline-block; margin-left: 4px; color: var(--muted); font-size: 11px; }
+  .bubble .ticks.read { color: #34b7f1; }
+  .bubble .read-by { display: inline-block; margin-left: 6px; color: var(--muted); font-size: 11px;
+    cursor: pointer; position: relative; }
+  .bubble .read-by:hover { color: var(--text); }
+  .bubble .read-by .panel { display: none; position: absolute; bottom: 100%; right: 0; margin-bottom: 4px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px;
+    min-width: 200px; max-width: 260px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); z-index: 5;
+    text-align: left; white-space: normal; }
+  .bubble .read-by.open .panel,
+  .bubble .read-by:hover .panel { display: block; }
+  .bubble .read-by .row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0;
+    font-size: 11px; color: var(--text); }
+  .bubble .read-by .row .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bubble .read-by .row .when { color: var(--muted); flex-shrink: 0; }
+  .bubble .read-by .row .st { font-size: 10px; padding: 0 4px; border-radius: 3px; background: var(--panel-2);
+    color: var(--muted); flex-shrink: 0; }
+  .bubble .read-by .row .st.read, .bubble .read-by .row .st.played { color: #34b7f1; }
+  .bubble .actions { position: absolute; top: 4px; right: 6px; display: none; gap: 4px;
+    background: rgba(0,0,0,0.5); border-radius: 6px; padding: 2px 4px; }
+  .bubble:hover .actions { display: flex; }
+  .bubble .actions button { background: none; border: none; color: var(--text); cursor: pointer;
+    font-size: 13px; padding: 2px 4px; }
+  .bubble { position: relative; }
+  .reactions-row { display: flex; flex-wrap: wrap; gap: 4px; align-self: flex-start; margin-top: -4px;
+    margin-bottom: 4px; padding-left: 4px; }
+  .reactions-row.out { align-self: flex-end; padding-right: 4px; padding-left: 0; }
+  .reaction-pill { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1px 7px; font-size: 12px; cursor: pointer; }
+  .compose .attach-btn, .compose .react-cancel { background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 50%; width: 40px; height: 40px; flex-shrink: 0;
+    cursor: pointer; }
+  .reply-preview { display: none; padding: 8px 12px; background: var(--panel-2);
+    border-bottom: 1px solid var(--border); align-items: center; gap: 8px; }
+  .reply-preview.visible { display: flex; }
+  .reply-preview .body { flex: 1; font-size: 12px; color: var(--muted); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .reply-preview .clear { background: none; border: none; color: var(--muted); cursor: pointer; }
+  .emoji-picker { position: absolute; bottom: 100%; right: 0; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px; display: none; gap: 4px;
+    z-index: 10; }
+  .emoji-picker.visible { display: flex; }
+  .emoji-picker button { background: none; border: none; font-size: 18px; cursor: pointer;
+    padding: 4px 6px; }
+  .emoji-picker button:hover { background: var(--panel-2); border-radius: 4px; }
+  .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+  .compose { padding: 10px 12px; background: var(--panel); border-top: 1px solid var(--border);
+    display: flex; gap: 8px; flex-shrink: 0; }
+  .compose textarea { flex: 1; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 18px; color: var(--text); resize: none; max-height: 120px; min-height: 40px; line-height: 1.4; }
+  .compose button { background: var(--accent); color: #0e1014; border: none; border-radius: 50%;
+    width: 40px; height: 40px; font-weight: 700; flex-shrink: 0; }
+  .compose button:disabled { background: #2a3142; color: var(--muted); cursor: not-allowed; }
+  .placeholder { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="card">
+    <h1>whatsapp-bridge</h1>
+    <p>Paste your API token (in <code>.env</code> as <code>API_TOKEN</code>).</p>
+    <input id="token-input" type="password" placeholder="API token..." autocomplete="off" />
+    <button id="login-btn">Connect</button>
+    <div class="err" id="login-err"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="brand">whatsapp-bridge</div>
+    <span class="dot" id="conn-dot"></span>
+    <select id="session-select"></select>
+    <a id="update-pill" href="#" title="" hidden>Update available</a>
+    <div class="spacer"></div>
+    <button id="logout-btn">Logout</button>
+  </header>
+  <main>
+    <aside>
+      <div class="search">
+        <input id="search-input" placeholder="Search conversations..." />
+      </div>
+      <div class="list" id="convo-list"></div>
+    </aside>
+    <section class="chat">
+      <div id="chat-pane" class="placeholder">Select a conversation</div>
+    </section>
+  </main>
+</div>
+
+<script>
+const TOKEN_KEY = 'whatsapp-bridge-token';
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  token: null,
+  sessions: [],
+  session: null,
+  conversations: [],
+  currentJid: null,
+  messages: [],
+  search: '',
+  replyTo: null, // { id, body }
+};
+
+const REACTION_SET = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥'];
+
+function statusTicks(direction, status) {
+  if (direction !== 'out') return '';
+  if (status === 'read' || status === 'played') return '<span class="ticks read">✓✓</span>';
+  if (status === 'delivered') return '<span class="ticks">✓✓</span>';
+  if (status === 'server' || status === 'pending') return '<span class="ticks">✓</span>';
+  return '';
+}
+
+function readBySummary(receipts, participantCount) {
+  if (!receipts || !receipts.length) return '';
+  const readers = receipts.filter((r) => r.status === 'read' || r.status === 'played').length;
+  const delivered = receipts.filter((r) => r.status === 'delivered').length;
+  const denom = participantCount && participantCount > 1 ? participantCount - 1 : null; // exclude self
+  const numerator = readers;
+  const label = denom != null
+    ? `Read by ${numerator}/${denom}`
+    : `Read by ${numerator}`;
+  const rows = receipts
+    .slice()
+    .sort((a, b) => b.ts - a.ts)
+    .map((r) => {
+      const cls = (r.status === 'read' || r.status === 'played') ? r.status : '';
+      return `<div class="row">
+        <span class="who">${escapeHtml(r.participant_label || r.participant)}</span>
+        <span class="st ${cls}">${escapeHtml(r.status)}</span>
+        <span class="when">${escapeHtml(fmtTime(r.ts))}</span>
+      </div>`;
+    })
+    .join('');
+  const deliveredNote = (delivered && denom != null)
+    ? `<div class="row" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px">
+        <span class="who">Delivered to</span>
+        <span class="when">${delivered}</span>
+       </div>`
+    : '';
+  return `<span class="read-by" data-readby="1">${label}<span class="panel">${rows}${deliveredNote}</span></span>`;
+}
+
+// ---------- API ----------
+async function api(path, init = {}) {
+  const res = await fetch(path, {
+    ...init,
+    headers: {
+      'Authorization': `Bearer ${state.token}`,
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  });
+  if (res.status === 401) throw new Error('unauthorized');
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+async function getHealth() { return api('/v1/health'); }
+async function getConversations(session) {
+  return api(`/v1/conversations?session=${encodeURIComponent(session)}&limit=200`);
+}
+async function getMessages(session, jid) {
+  return api(`/v1/messages?session=${encodeURIComponent(session)}&jid=${encodeURIComponent(jid)}&limit=100`);
+}
+async function sendMessage(session, to, text, opts = {}) {
+  const body = { session, to, text, ...opts };
+  return api('/v1/send', { method: 'POST', body: JSON.stringify(body) });
+}
+async function sendMediaCall(session, to, base64, kind, mime, filename, caption, quoted_id) {
+  return api('/v1/send', {
+    method: 'POST',
+    body: JSON.stringify({
+      session, to, media_base64: base64, media_kind: kind, mime, filename, caption, quoted_id,
+    }),
+  });
+}
+async function reactCall(session, chat_jid, message_id, emoji) {
+  return api('/v1/react', { method: 'POST', body: JSON.stringify({ session, chat_jid, message_id, emoji }) });
+}
+async function deleteMessageCall(session, chat_jid, message_id) {
+  return api('/v1/messages', { method: 'DELETE', body: JSON.stringify({ session, chat_jid, message_id }) });
+}
+async function markReadCall(session, jid, ids) {
+  return api('/v1/read', { method: 'POST', body: JSON.stringify({ session, jid, message_ids: ids }) });
+}
+
+// Media is fetched via Authorization header (NOT a query-string token, which would
+// land in browser history and reverse-proxy access logs). Each successfully fetched
+// asset becomes a blob: URL the browser can render. Cached for the session.
+const mediaBlobCache = new Map();
+async function loadMediaBlob(rel) {
+  if (!rel) return null;
+  const cached = mediaBlobCache.get(rel);
+  if (cached) return cached;
+  const res = await fetch(rel, { headers: { Authorization: `Bearer ${state.token}` } });
+  if (!res.ok) throw new Error(`media ${res.status}`);
+  const url = URL.createObjectURL(await res.blob());
+  mediaBlobCache.set(rel, url);
+  return url;
+}
+function hydrateMedia(rootEl) {
+  rootEl.querySelectorAll('[data-media-src]').forEach((el) => {
+    const rel = el.getAttribute('data-media-src');
+    el.removeAttribute('data-media-src');
+    loadMediaBlob(rel).then((url) => {
+      if (!url) return;
+      if (el.tagName === 'A') el.href = url;
+      else el.src = url;
+    }).catch(() => { /* ignore failed fetch */ });
+  });
+}
+
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const result = String(r.result);
+      const base64 = result.includes(',') ? result.split(',', 2)[1] : result;
+      res(base64);
+    };
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+function fileKind(mime) {
+  if (!mime) return 'document';
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  return 'document';
+}
+
+// ---------- Auth ----------
+async function tryToken(token) {
+  state.token = token;
+  const r = await fetch('/v1/health', { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) throw new Error('invalid token');
+}
+
+function showLogin(err) {
+  $('login').classList.add('visible');
+  $('app').classList.remove('visible');
+  $('login-err').textContent = err || '';
+  setTimeout(() => $('token-input').focus(), 50);
+}
+
+function showApp() {
+  $('login').classList.remove('visible');
+  $('app').classList.add('visible');
+}
+
+$('login-btn').onclick = async () => {
+  const t = $('token-input').value.trim();
+  if (!t) return;
+  try {
+    await tryToken(t);
+    localStorage.setItem(TOKEN_KEY, t);
+    await boot();
+  } catch (e) {
+    showLogin('Invalid token');
+  }
+};
+
+$('token-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('login-btn').click();
+});
+
+$('logout-btn').onclick = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  state.token = null;
+  showLogin();
+};
+
+// ---------- Render ----------
+function initials(name) {
+  if (!name) return '?';
+  return name.split(/\s+/).slice(0, 2).map(p => p[0] || '').join('').toUpperCase() || '?';
+}
+
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  if (same) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const diff = (now - d) / (1000 * 60 * 60 * 24);
+  if (diff < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function fmtDay(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  if (same) return 'Today';
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
+function renderSessions() {
+  const sel = $('session-select');
+  sel.innerHTML = '';
+  for (const s of state.sessions) {
+    const opt = document.createElement('option');
+    opt.value = s; opt.textContent = s;
+    if (s === state.session) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function renderConversations() {
+  const root = $('convo-list');
+  root.innerHTML = '';
+  const q = state.search.toLowerCase();
+  for (const c of state.conversations) {
+    const name = c.display_name || c.phone || c.chat_jid;
+    if (q && !(name.toLowerCase().includes(q) || (c.last_body || '').toLowerCase().includes(q))) continue;
+    const el = document.createElement('div');
+    el.className = 'convo' + (c.chat_jid === state.currentJid ? ' active' : '');
+    const lastBody = c.last_body || (c.last_type ? `[${c.last_type}]` : '');
+    const phoneLine = c.phone ? `<div class="phone">${escapeHtml(c.phone)}</div>` : '';
+    const picUrl = c.profile_pic_url
+      ? `<img src="${escapeHtml(c.profile_pic_url)}" alt="" class="avatar-img">`
+      : '';
+    const avatarInner = picUrl || (c.is_group ? '#' : escapeHtml(initials(name)));
+    el.innerHTML = `
+      <div class="avatar ${c.is_group ? 'group' : ''}">${avatarInner}</div>
+      <div class="meta">
+        <div class="name">${escapeHtml(name)}${c.is_group ? '<span class="group-tag">GROUP</span>' : ''}</div>
+        ${phoneLine}
+        <div class="last">${escapeHtml(lastBody)}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <div class="ts">${fmtTime(c.last_ts)}</div>
+        ${c.unread_count > 0 ? `<div class="badge">${c.unread_count}</div>` : ''}
+      </div>
+    `;
+    wireImgFallback(el);
+    el.onclick = () => openConvo(c);
+    root.appendChild(el);
+  }
+}
+
+function renderChatPane() {
+  const pane = $('chat-pane');
+  if (!state.currentJid) {
+    pane.className = 'placeholder';
+    pane.innerHTML = 'Select a conversation';
+    return;
+  }
+  const convo = state.conversations.find(c => c.chat_jid === state.currentJid);
+  const name = convo?.display_name || convo?.phone || state.currentJid;
+  const sub = convo?.is_group ? 'Group' : (convo?.phone || '');
+  pane.className = '';
+  const picUrl = convo?.profile_pic_url
+    ? `<img src="${escapeHtml(convo.profile_pic_url)}" alt="" class="avatar-img">`
+    : '';
+  const avatarInner = picUrl || (convo?.is_group ? '#' : escapeHtml(initials(name)));
+  pane.innerHTML = `
+    <div class="chat-header">
+      <div class="avatar ${convo?.is_group ? 'group' : ''}">${avatarInner}</div>
+      <div>
+        <div class="name">${escapeHtml(name)}</div>
+        <div class="sub">${escapeHtml(sub)}</div>
+      </div>
+    </div>
+    <div class="reply-preview" id="reply-preview">
+      <div class="body" id="reply-preview-body"></div>
+      <button class="clear" id="reply-clear" title="Cancel reply">✕</button>
+    </div>
+    <div class="messages" id="messages"></div>
+    <input type="file" id="attach-input" style="display:none" />
+    <div class="compose">
+      <button class="attach-btn" id="attach-btn" title="Attach file">📎</button>
+      <textarea id="compose-input" placeholder="Type a message..." rows="1"></textarea>
+      <button id="send-btn" title="Send">→</button>
+    </div>
+  `;
+
+  wireImgFallback(pane);
+  renderMessages();
+
+  const input = $('compose-input');
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      doSend();
+    }
+  });
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+  $('send-btn').onclick = doSend;
+  $('attach-btn').onclick = () => $('attach-input').click();
+  $('attach-input').addEventListener('change', onAttach);
+  $('reply-clear').onclick = () => { state.replyTo = null; renderReplyPreview(); };
+  renderReplyPreview();
+
+  // Mark visible inbound messages as read on the WA side
+  const unreadIds = state.messages
+    .filter((m) => m.direction === 'in' && m.delivery_status !== 'read')
+    .map((m) => m.id);
+  if (unreadIds.length) {
+    markReadCall(state.session, state.currentJid, unreadIds).catch(() => {});
+  }
+}
+
+function renderReplyPreview() {
+  const wrap = $('reply-preview');
+  if (!wrap) return;
+  if (!state.replyTo) {
+    wrap.classList.remove('visible');
+    return;
+  }
+  $('reply-preview-body').textContent = `Replying: ${state.replyTo.body || '[message]'}`;
+  wrap.classList.add('visible');
+}
+
+async function onAttach(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (file.size > 25 * 1024 * 1024) {
+    alert('File too large (max 25 MB).');
+    e.target.value = '';
+    return;
+  }
+  const caption = $('compose-input').value.trim() || undefined;
+  $('attach-btn').disabled = true;
+  try {
+    const base64 = await fileToBase64(file);
+    const kind = fileKind(file.type);
+    await sendMediaCall(
+      state.session, state.currentJid, base64, kind,
+      file.type || undefined, file.name, caption,
+      state.replyTo?.id,
+    );
+    $('compose-input').value = '';
+    state.replyTo = null;
+    renderReplyPreview();
+    await refreshOpenChat();
+  } catch (err) {
+    alert('Send media failed: ' + err.message);
+  } finally {
+    $('attach-btn').disabled = false;
+    e.target.value = '';
+  }
+}
+
+async function reactToMessage(msg) {
+  const picker = document.createElement('div');
+  picker.className = 'emoji-picker visible';
+  picker.style.cssText = 'position:fixed; z-index: 1000;';
+  picker.innerHTML = REACTION_SET
+    .map((e) => `<button data-e="${e}">${e}</button>`)
+    .concat([`<button data-e="">✕</button>`])
+    .join('');
+  const rect = event?.target?.getBoundingClientRect?.() ?? { left: 100, top: 100 };
+  picker.style.left = `${rect.left}px`;
+  picker.style.top = `${rect.top - 44}px`;
+  document.body.appendChild(picker);
+  const cleanup = () => { picker.remove(); document.removeEventListener('click', off, true); };
+  const off = (ev) => { if (!picker.contains(ev.target)) cleanup(); };
+  setTimeout(() => document.addEventListener('click', off, true), 0);
+  picker.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    const emoji = btn.dataset.e;
+    cleanup();
+    try {
+      await reactCall(state.session, msg.chat_jid, msg.id, emoji);
+      await refreshOpenChat();
+    } catch (e) {
+      alert('Reaction failed: ' + e.message);
+    }
+  });
+}
+
+async function deleteOwnMessage(msg) {
+  if (!confirm('Delete this message for everyone?')) return;
+  try {
+    await deleteMessageCall(state.session, msg.chat_jid, msg.id);
+    await refreshOpenChat();
+  } catch (e) { alert('Delete failed: ' + e.message); }
+}
+
+function startReply(msg) {
+  state.replyTo = {
+    id: msg.id,
+    body: msg.body || `[${msg.type}]`,
+  };
+  renderReplyPreview();
+  $('compose-input')?.focus();
+}
+
+function renderMessages() {
+  const root = $('messages');
+  if (!root) return;
+  if (!state.messages.length) {
+    root.innerHTML = '<div class="empty">No messages</div>';
+    return;
+  }
+  root.innerHTML = '';
+  const ordered = [...state.messages].sort((a, b) => a.ts - b.ts);
+  let lastDay = '';
+  for (const m of ordered) {
+    const dayKey = new Date(m.ts).toDateString();
+    if (dayKey !== lastDay) {
+      const div = document.createElement('div');
+      div.className = 'day-divider';
+      div.textContent = fmtDay(m.ts);
+      root.appendChild(div);
+      lastDay = dayKey;
+    }
+    const b = document.createElement('div');
+    const isOut = m.direction === 'out';
+    b.className = 'bubble ' + (isOut ? 'out' : 'in') + (m.deleted_at ? ' deleted' : '');
+
+    // Show sender for any inbound message in a group; for 1-1, show only if we
+    // have a real display name (chat header already names the other party).
+    const convoCtx = state.conversations.find((c) => c.chat_jid === state.currentJid);
+    const isGroup = !!convoCtx?.is_group;
+    let senderLine = '';
+    if (!isOut) {
+      const label = isGroup
+        ? (m.from_label || m.from_display_name || m.from_phone || m.from_jid)
+        : m.from_display_name;
+      if (label) {
+        const phoneTag = (isGroup && m.from_phone && m.from_phone !== label)
+          ? ` <span style="color:var(--muted);font-weight:normal">${escapeHtml(m.from_phone)}</span>`
+          : '';
+        senderLine = `<div class="sender">${escapeHtml(label)}${phoneTag}</div>`;
+      }
+    }
+
+    const replyLine = m.quoted
+      ? `<div class="reply-quote">${escapeHtml((m.quoted.body_preview || '[message]').slice(0, 120))}</div>`
+      : '';
+
+    let bodyHtml = '';
+    if (m.deleted_at) {
+      bodyHtml = '<span class="non-text">🗑️ message deleted</span>';
+    } else if (m.media_url) {
+      const rel = escapeHtml(m.media_url);
+      const caption = m.body ? escapeHtml(m.body).replace(/\n/g, '<br>') : '';
+      if (m.type === 'image' || m.type === 'sticker') {
+        bodyHtml = `<img class="media" data-media-src="${rel}" alt="image" />` + (caption ? `<div style="margin-top:6px">${caption}</div>` : '');
+      } else if (m.type === 'video') {
+        bodyHtml = `<video class="media" controls data-media-src="${rel}"></video>` + (caption ? `<div style="margin-top:6px">${caption}</div>` : '');
+      } else if (m.type === 'audio') {
+        bodyHtml = `<audio class="media" controls data-media-src="${rel}"></audio>`;
+      } else if (m.type === 'document') {
+        const fname = (m.media_url.split('/').pop() || 'file');
+        bodyHtml = `<div class="doc">📄 <a data-media-src="${rel}" download="${escapeHtml(fname)}">${escapeHtml(fname)}</a></div>` + (caption ? `<div style="margin-top:6px">${caption}</div>` : '');
+      } else {
+        bodyHtml = `<a data-media-src="${rel}">[${escapeHtml(m.type)}]</a>`;
+      }
+    } else if (m.body) {
+      bodyHtml = escapeHtml(m.body).replace(/\n/g, '<br>');
+    } else {
+      bodyHtml = `<span class="non-text">[${escapeHtml(m.type)}]</span>`;
+    }
+
+    const ticks = statusTicks(m.direction, m.delivery_status);
+    const readBy = (isOut && isGroup)
+      ? readBySummary(m.receipts, convoCtx?.participant_count)
+      : '';
+    const editedTag = m.edited_at ? ' <span class="non-text" style="font-size:10px">(edited)</span>' : '';
+
+    const actions = m.deleted_at ? '' : `
+      <div class="actions">
+        <button data-act="reply" title="Reply">↩︎</button>
+        <button data-act="react" title="React">😊</button>
+        ${isOut ? '<button data-act="delete" title="Delete">🗑️</button>' : ''}
+      </div>
+    `;
+
+    b.innerHTML = `
+      ${senderLine}
+      ${replyLine}
+      ${bodyHtml}
+      <div class="meta">${editedTag}${fmtTime(m.ts)}${ticks}${readBy}</div>
+      ${actions}
+    `;
+
+    // Click-to-pin the read-by panel (in addition to hover for desktop).
+    b.querySelectorAll('.read-by').forEach((el) => {
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        el.classList.toggle('open');
+      });
+    });
+
+    b.querySelectorAll('button[data-act]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const act = btn.dataset.act;
+        if (act === 'reply') startReply(m);
+        else if (act === 'react') reactToMessage(m);
+        else if (act === 'delete') deleteOwnMessage(m);
+      });
+    });
+
+    root.appendChild(b);
+    hydrateMedia(b);
+
+    // Reactions row
+    if (m.reactions?.length) {
+      const row = document.createElement('div');
+      row.className = 'reactions-row ' + (isOut ? 'out' : '');
+      // group by emoji
+      const grouped = {};
+      for (const r of m.reactions) {
+        grouped[r.emoji] = (grouped[r.emoji] || 0) + 1;
+      }
+      row.innerHTML = Object.entries(grouped)
+        .map(([e, n]) => `<span class="reaction-pill" title="reaction">${escapeHtml(e)} ${n > 1 ? n : ''}</span>`)
+        .join('');
+      root.appendChild(row);
+    }
+  }
+  root.scrollTop = root.scrollHeight;
+}
+
+async function doSend() {
+  const input = $('compose-input');
+  const text = input.value.trim();
+  if (!text || !state.currentJid) return;
+  $('send-btn').disabled = true;
+  try {
+    await sendMessage(state.session, state.currentJid, text, {
+      quoted_id: state.replyTo?.id,
+    });
+    input.value = '';
+    input.style.height = 'auto';
+    state.replyTo = null;
+    renderReplyPreview();
+    await refreshOpenChat();
+  } catch (e) {
+    alert('Send failed: ' + e.message);
+  } finally {
+    $('send-btn').disabled = false;
+    input.focus();
+  }
+}
+
+async function openConvo(c) {
+  state.currentJid = c.chat_jid;
+  renderConversations();
+  renderChatPane();
+  await refreshOpenChat();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// CSP-safe avatar fallback: replaces the old inline onerror="this.remove()".
+function wireImgFallback(root) {
+  root.querySelectorAll('img.avatar-img').forEach((img) => {
+    img.addEventListener('error', () => img.remove());
+  });
+}
+
+// ---------- Polling ----------
+async function refreshConversations() {
+  try {
+    const data = await getConversations(state.session);
+    state.conversations = data.conversations;
+    renderConversations();
+    if (state.currentJid && !state.conversations.find(c => c.chat_jid === state.currentJid)) {
+      // current chat scrolled off; that's fine, leave open
+    }
+  } catch (e) {
+    if (e.message === 'unauthorized') showLogin('Session expired');
+  }
+}
+
+async function refreshOpenChat() {
+  if (!state.currentJid) return;
+  try {
+    const data = await getMessages(state.session, state.currentJid);
+    state.messages = data.messages;
+    renderMessages();
+  } catch (e) {
+    if (e.message === 'unauthorized') showLogin('Session expired');
+  }
+}
+
+let convoTimer, msgTimer;
+function startPolling() {
+  clearInterval(convoTimer);
+  clearInterval(msgTimer);
+  convoTimer = setInterval(refreshConversations, 8_000);
+  msgTimer = setInterval(refreshOpenChat, 3_000);
+}
+
+// ---------- Events ----------
+$('session-select').addEventListener('change', async (e) => {
+  state.session = e.target.value;
+  state.currentJid = null;
+  state.messages = [];
+  renderChatPane();
+  await refreshConversations();
+});
+
+$('search-input').addEventListener('input', (e) => {
+  state.search = e.target.value;
+  renderConversations();
+});
+
+function renderUpdatePill(updates) {
+  const pill = $('update-pill');
+  if (!pill || !updates) return;
+  const parts = [];
+  if (updates.baileys?.behind && updates.baileys?.latest) {
+    parts.push(`Baileys ${updates.baileys.current} → ${updates.baileys.latest}`);
+  }
+  if (updates.wabridge?.behind && updates.wabridge?.latest_sha) {
+    parts.push(`whatsapp-bridge ${updates.wabridge.current_sha.slice(0,7)} → ${updates.wabridge.latest_sha.slice(0,7)}`);
+  }
+  if (!parts.length) { pill.hidden = true; return; }
+  pill.hidden = false;
+  pill.textContent = 'Update available';
+  pill.title = parts.join(' • ');
+}
+
+// ---------- Boot ----------
+async function boot() {
+  try {
+    const h = await getHealth();
+    state.sessions = h.sessions || [];
+    renderUpdatePill(h.updates);
+    if (!state.sessions.length) {
+      showLogin('No sessions paired yet. Run `npm run start -- <name> <number>` first.');
+      return;
+    }
+    state.session = state.sessions[0];
+    $('conn-dot').classList.add('ok');
+    showApp();
+    renderSessions();
+    await refreshConversations();
+    startPolling();
+  } catch (e) {
+    showLogin(e.message);
+  }
+}
+
+// init
+const stored = localStorage.getItem(TOKEN_KEY);
+if (stored) {
+  state.token = stored;
+  boot();
+} else {
+  showLogin();
+}
+</script>
+</body>
+</html>
