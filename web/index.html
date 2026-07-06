@@ -73,6 +73,7 @@
   #update-pill { font-size: 11px; padding: 3px 9px; border-radius: 999px; margin: 0 14px 10px; align-self: flex-start;
     background: rgba(144,133,233,.12); color: var(--accent); border: 1px solid rgba(144,133,233,.3);
     text-decoration: none; display: inline-block; }
+  #update-pill[hidden] { display: none; }
   aside .search input { width: 100%; padding: 9px 13px; background: var(--bg); border: 1px solid var(--line);
     border-radius: 11px; color: var(--ink); font-size: 13px; }
   aside .search input:focus { outline: none; border-color: var(--accent); }
@@ -118,10 +119,15 @@
   .messages { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 5px;
     min-height: 0; }
   .messages .empty { margin: auto; color: var(--ink-3); }
-  .bubble { max-width: 64%; padding: 9px 13px; border-radius: 15px; word-wrap: break-word;
-    white-space: pre-wrap; position: relative; font-size: 13.5px; line-height: 1.45;
-    border: 1px solid transparent; }
-  .bubble .meta { font-size: 10px; color: var(--ink-3); margin-top: 4px; text-align: right; }
+  .bubble { max-width: min(64%, 560px); padding: 7px 11px; border-radius: 15px;
+    position: relative; font-size: 13.5px; line-height: 1.45; border: 1px solid transparent; }
+  /* pre-wrap lives on .body only: the bubble's own markup must not render
+     template whitespace as blank lines. Timestamp floats into the last text
+     line, WhatsApp-style, so short messages stay one compact line. */
+  .bubble .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .bubble .body::after { content: ""; display: block; clear: both; }
+  .bubble .meta { float: right; font-size: 10px; color: var(--ink-3); line-height: 1;
+    margin: 10px -2px 0 10px; white-space: nowrap; }
   .bubble.in { background: var(--in-bubble); border-color: var(--line); align-self: flex-start;
     border-bottom-left-radius: 5px; }
   .bubble.out { background: var(--out-bubble); border-color: #3a3663; align-self: flex-end;
@@ -131,8 +137,11 @@
     padding: 2px 12px; border-radius: 999px; font-size: 10.5px; margin: 10px 0; text-transform: uppercase;
     letter-spacing: .06em; font-weight: 600; }
   .non-text { color: var(--ink-3); font-style: italic; }
-  .bubble img.media { max-width: 100%; border-radius: 10px; display: block; cursor: pointer; }
-  .bubble video.media, .bubble audio.media { max-width: 100%; border-radius: 10px; display: block; }
+  .bubble img.media { max-width: 340px; width: 100%; border-radius: 10px; display: block; cursor: pointer; }
+  .bubble video.media { max-width: 380px; width: 100%; border-radius: 10px; display: block; }
+  .bubble audio.media { width: 280px; max-width: 100%; display: block; }
+  .bubble:has(img.media), .bubble:has(video.media) { padding: 5px; }
+  .bubble:has(img.media) .meta, .bubble:has(video.media) .meta { margin-right: 4px; margin-bottom: 4px; }
   .bubble .doc { display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
   .bubble .doc a { color: var(--ink); text-decoration: underline; }
   .bubble .reply-quote { background: rgba(255,255,255,0.05); border-left: 3px solid var(--accent);
@@ -263,6 +272,48 @@ const state = {
 };
 
 const REACTION_SET = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥'];
+
+// ---------- Demo mode ----------
+// Open /?demo=1 (or the file directly with ?demo=1) to preview the UI with
+// representative mock data - no token, no API. Used for design iteration,
+// screenshots, and demos without exposing a real WhatsApp session.
+const DEMO = new URLSearchParams(location.search).has('demo');
+const DEMO_NOW = Date.now();
+const DEMO_DATA = {
+  conversations: [
+    { chat_jid: 'demo-anna@s.whatsapp.net', display_name: 'Anna Keller', phone: '+49 176 5550111', last_body: 'Perfect, see you at 3!', last_ts: DEMO_NOW - 4 * 60e3, unread_count: 2, is_group: false },
+    { chat_jid: 'demo-team@g.us', display_name: 'Product Team', last_body: 'Jonas: shipping the fix now', last_ts: DEMO_NOW - 22 * 60e3, unread_count: 5, is_group: true, participant_count: 8 },
+    { chat_jid: 'demo-markus@s.whatsapp.net', display_name: 'Markus Weber', phone: '+49 151 5550222', last_body: '[audio] quick update on the launch', last_type: 'audio', last_ts: DEMO_NOW - 2 * 3600e3, unread_count: 0, is_group: false },
+    { chat_jid: 'demo-mom@s.whatsapp.net', display_name: 'Mom', phone: '+49 160 5550333', last_body: 'Call me when you can ❤️', last_ts: DEMO_NOW - 26 * 3600e3, unread_count: 0, is_group: false },
+    { chat_jid: 'demo-gym@g.us', display_name: 'Gym Crew 🏋️', last_body: 'same time tomorrow', last_ts: DEMO_NOW - 3 * 86400e3, unread_count: 0, is_group: true, participant_count: 5 },
+  ],
+  messages: {
+    'demo-anna@s.whatsapp.net': [
+      { id: 'd1', direction: 'in', type: 'text', body: 'Hey! Are we still on for today?', ts: DEMO_NOW - 62 * 60e3 },
+      { id: 'd2', direction: 'out', type: 'text', body: 'Yes! 3pm works', ts: DEMO_NOW - 58 * 60e3, delivery_status: 'read' },
+      { id: 'd3', direction: 'in', type: 'text', body: 'Great. I looked at the proposal you sent over yesterday and I think the overall direction is right, but the pricing section needs another pass before we show it to the client on Friday.', ts: DEMO_NOW - 30 * 60e3 },
+      { id: 'd4', direction: 'out', type: 'text', body: 'Agreed.\nI will rework the pricing tonight and send you v2 in the morning.', ts: DEMO_NOW - 25 * 60e3, delivery_status: 'delivered', quoted: { id: 'd3', body_preview: 'Great. I looked at the proposal you sent over yesterday...' } },
+      { id: 'd5', direction: 'out', type: 'text', body: 'ok', ts: DEMO_NOW - 20 * 60e3, delivery_status: 'read' },
+      { id: 'd6', direction: 'in', type: 'text', body: '🔥', ts: DEMO_NOW - 6 * 60e3, reactions: [{ emoji: '👍' }] },
+      { id: 'd7', direction: 'in', type: 'text', body: 'Perfect, see you at 3!', ts: DEMO_NOW - 4 * 60e3 },
+    ],
+    'demo-team@g.us': [
+      { id: 'g1', direction: 'in', type: 'text', body: 'Standup in 5', ts: DEMO_NOW - 3 * 3600e3, from_label: 'Sarah', from_phone: '+49 170 5550444' },
+      { id: 'g2', direction: 'out', type: 'text', body: 'On my way', ts: DEMO_NOW - 3 * 3600e3 + 60e3, delivery_status: 'read', receipts: [
+        { participant: 'p1', participant_label: 'Sarah', status: 'read', ts: DEMO_NOW - 3 * 3600e3 + 90e3 },
+        { participant: 'p2', participant_label: 'Jonas', status: 'read', ts: DEMO_NOW - 3 * 3600e3 + 95e3 },
+        { participant: 'p3', participant_label: 'Mia', status: 'delivered', ts: DEMO_NOW - 3 * 3600e3 + 80e3 },
+      ] },
+      { id: 'g3', direction: 'in', type: 'text', body: 'The staging deploy is green ✅', ts: DEMO_NOW - 40 * 60e3, from_label: 'Jonas' },
+      { id: 'g4', direction: 'in', type: 'text', body: 'shipping the fix now', ts: DEMO_NOW - 22 * 60e3, from_label: 'Jonas', reactions: [{ emoji: '🔥' }, { emoji: '🔥' }, { emoji: '👍' }] },
+    ],
+    'demo-markus@s.whatsapp.net': [
+      { id: 'm1', direction: 'in', type: 'audio', media_url: null, body: '[audio] quick update on the launch', ts: DEMO_NOW - 2 * 3600e3 },
+      { id: 'm2', direction: 'out', type: 'text', body: 'Nice, listening now. I will send the Q3 report right after.', ts: DEMO_NOW - 110 * 60e3, delivery_status: 'read' },
+      { id: 'm3', direction: 'out', type: 'text', body: 'Done ✅', ts: DEMO_NOW - 100 * 60e3, delivery_status: 'delivered' },
+    ],
+  },
+};
 
 // Statuses and broadcast lists are not conversations. The API filters them
 // server-side; this is defense in depth for older cached rows.
@@ -589,7 +640,7 @@ function renderChatPane() {
   const unreadIds = state.messages
     .filter((m) => m.direction === 'in' && m.delivery_status !== 'read')
     .map((m) => m.id);
-  if (unreadIds.length) {
+  if (unreadIds.length && !DEMO) {
     markReadCall(state.session, state.currentJid, unreadIds).catch(() => {});
   }
 }
@@ -763,13 +814,10 @@ function renderMessages() {
       </div>
     `;
 
-    b.innerHTML = `
-      ${senderLine}
-      ${replyLine}
-      ${bodyHtml}
-      <div class="meta">${editedTag}${fmtTime(m.ts)}${ticks}${readBy}</div>
-      ${actions}
-    `;
+    // Assembled without inter-part whitespace: .body is pre-wrap, so any
+    // template newlines/indentation would render as blank lines in the bubble.
+    const metaHtml = `<span class="meta">${editedTag}${fmtTime(m.ts)}${ticks}${readBy}</span>`;
+    b.innerHTML = senderLine + replyLine + `<div class="body">${bodyHtml}${metaHtml}</div>` + actions;
 
     // Click-to-pin the read-by panel (in addition to hover for desktop).
     b.querySelectorAll('.read-by').forEach((el) => {
@@ -852,6 +900,11 @@ function wireImgFallback(root) {
 
 // ---------- Polling ----------
 async function refreshConversations() {
+  if (DEMO) {
+    state.conversations = DEMO_DATA.conversations;
+    renderConversations();
+    return;
+  }
   const session = state.session;
   try {
     const data = await getConversations(session);
@@ -867,6 +920,11 @@ async function refreshOpenChat() {
   if (!state.currentJid) return;
   const session = state.session;
   const jid = state.currentJid;
+  if (DEMO) {
+    state.messages = DEMO_DATA.messages[jid] || [];
+    renderMessages();
+    return;
+  }
   try {
     const data = await getMessages(session, jid);
     // Drop stale responses: the user may have switched chat or session while
@@ -929,6 +987,15 @@ function renderUpdatePill(updates) {
 
 // ---------- Boot ----------
 async function boot() {
+  if (DEMO) {
+    state.sessions = ['demo'];
+    state.session = 'demo';
+    $('conn-dot').classList.add('ok');
+    showApp();
+    renderSessions();
+    await refreshConversations();
+    return;
+  }
   try {
     const h = await getHealth();
     state.sessions = h.sessions || [];
@@ -950,7 +1017,9 @@ async function boot() {
 
 // init
 const stored = localStorage.getItem(TOKEN_KEY);
-if (stored) {
+if (DEMO) {
+  boot();
+} else if (stored) {
   state.token = stored;
   boot();
 } else {
