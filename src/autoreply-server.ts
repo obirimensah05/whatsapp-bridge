@@ -8,7 +8,7 @@ import { z } from 'zod'
 import { AUTOREPLY_DEFAULT_SESSION, AUTOREPLY_HOST, AUTOREPLY_PORT, AUTOREPLY_TOKEN } from './autoreply-env.js'
 import { expandJidGroup } from './db.js'
 import { generateDraftReply } from './autoreply-generate.js'
-import { sendDraftNotification, sendInboundNotification } from './autoreply-notify.js'
+import { isNotifyWhatsAppChat, sendDraftNotification, sendInboundNotification } from './autoreply-notify.js'
 import { evaluateAutoSendSafety } from './autoreply-safety.js'
 import {
   appendAudit,
@@ -191,6 +191,18 @@ app.post('/webhook', async (req, reply) => {
   const payload = parsed.data
   const message = typeof payload.message === 'string' ? null : payload.message
   const isTestEvent = payload.event === 'test'
+
+  // When drafts are delivered to the operator's own WhatsApp chat, never
+  // process messages from that chat - it would loop notifications into drafts.
+  if (!isTestEvent && isNotifyWhatsAppChat(message?.chat_jid)) {
+    appendAudit('notify_chat_skipped', {
+      session: payload.session ?? null,
+      message_id: message?.id ?? null,
+      chat_jid: message?.chat_jid ?? null,
+    })
+    return { ok: true, skipped: 'notify_channel_chat' }
+  }
+
   const isGroup = typeof message?.chat_jid === 'string' ? message.chat_jid.endsWith('@g.us') : false
   const policy = readPolicy()
   const decision = evaluatePolicy(policy, {

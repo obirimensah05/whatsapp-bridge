@@ -32,6 +32,7 @@
     "autoreply": "tsx src/autoreply-index.ts",
     "autoreply:dev": "tsx watch src/autoreply-index.ts",
     "autoreply:build-corpus": "tsx src/autoreply-corpus.ts",
+    "autoreply:setup-notify": "tsx src/autoreply-setup-notify.ts",
     "autoreply:stop": "launchctl bootout gui/$(id -u)/local.wa-autoreply && echo 'autoreply sidecar stopped (launchd agent unloaded)'",
     "autoreply:start": "launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/local.wa-autoreply.plist && echo 'autoreply sidecar started'",
     "autoreply:restart": "launchctl bootout gui/$(id -u)/local.wa-autoreply 2>/dev/null; launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/local.wa-autoreply.plist && echo 'autoreply sidecar restarted'",

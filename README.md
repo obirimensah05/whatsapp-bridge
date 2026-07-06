@@ -2,7 +2,7 @@
 
 > Self-hosted WhatsApp bridge for AI agents. One paired number, exposed via REST, MCP, and a web UI.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org) [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue.svg)](tsconfig.json) [![Built on Baileys](https://img.shields.io/badge/built%20on-Baileys-25D366.svg)](https://github.com/WhiskeySockets/Baileys) [![MCP](https://img.shields.io/badge/MCP-server-8A2BE2.svg)](AGENTS.md)
 
 Built on [Baileys](https://github.com/WhiskeySockets/Baileys). Single Node process, SQLite for storage, no runtime dependencies beyond WhatsApp itself.
 
@@ -16,6 +16,20 @@ Built on [Baileys](https://github.com/WhiskeySockets/Baileys). Single Node proce
 - **LID ↔ phone alias merge** — collapses the two JIDs WhatsApp uses for the same person into one conversation.
 - **Display name resolution** that works without any local contacts sync (push_name from WhatsApp itself), with optional macOS Contacts enrichment.
 - **Local-timezone CLI output** with DST handled by IANA tzdata.
+- **Autoreply sidecar** (optional) - drafts replies in your own voice via Claude, notifies you on Telegram, Slack, or your own WhatsApp number, and can auto-send under strict safety gates.
+
+## Tech stack
+
+| Library | Role |
+|---|---|
+| [Baileys](https://github.com/WhiskeySockets/Baileys) | WhatsApp Web protocol (multi-device, pairing-code login) |
+| [Fastify](https://fastify.dev) | REST API + web UI server |
+| [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) | single-file message store (`data/wa.db`, WAL mode) |
+| [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk) | stdio MCP server for AI agents |
+| [Zod](https://zod.dev) | request/webhook payload validation |
+| [tsx](https://tsx.is) | runs TypeScript directly - no build step |
+
+Runs anywhere Node 20+ runs. macOS is the primary target; see [docs/cross-platform.md](docs/cross-platform.md) for the exact Linux and Windows patch list (or just use WSL2 on Windows).
 
 ## Status
 
@@ -183,11 +197,80 @@ The full tool surface (~20 tools) and the complete safety contract live in [AGEN
 
 ## Autoreply sidecar (optional)
 
-A separate local process (`src/autoreply-*.ts`) that consumes the inbound webhook, generates draft replies in the operator's voice via Claude, sends Telegram notifications, and can optionally auto-send through the whatsapp-bridge REST API under policy + safety gates. Runs alongside the daemon on its own port.
+A separate local process (`src/autoreply-*.ts`) that turns the bridge into a draft-and-review (or fully automatic) reply machine. It runs alongside the daemon on its own port (`127.0.0.1:8081`) and talks to the bridge only over its local REST API.
 
 ```bash
 npm run autoreply               # boot sidecar
-npm run autoreply:build-corpus  # rebuild style corpus from WA history + second brain
+npm run autoreply:build-corpus  # rebuild style corpus from WA history
+npm run autoreply:setup-notify  # guided setup: pick where draft notifications go
+```
+
+### How a message flows through it
+
+1. **Inbound message arrives.** The bridge POSTs it to the sidecar via the inbound webhook (`WEBHOOK_URL=http://127.0.0.1:8081/webhook`).
+2. **Policy check.** The sidecar evaluates `data/autoreply/policy.json`: is the mode `draft`, `auto`, or `off`? Is this chat in scope (`all` / specific `contacts` / `groups` / `mixed`)? Are we inside the configured `active_hours` / `active_until` window? If any check fails, nothing happens beyond an audit log entry.
+3. **Enrichment.** For voice notes the sidecar waits for the transcript; for text it pulls the stored message so quoted context is available.
+4. **Draft generation.** Claude (via the local `claude` CLI) writes a reply in the operator's voice, grounded in a style corpus built from your own outbound message history. The model returns JSON: `reply`, `confidence` (0-1), `should_send`, `needs_review`, `reasons`.
+5. **Notification.** The draft is delivered to your chosen channel - Telegram, Slack, your own WhatsApp number, or a webhook (see below) - together with the incoming message, the confidence score, and the model's reasons.
+6. **Auto-send (only in `auto` mode).** If every safety gate passes, the reply is sent through the bridge's `/v1/send`. If any gate blocks it, the draft is delivered as a notification flagged `needs_review` instead - it fails safe to human review.
+
+Every step is appended to `data/autoreply/audit.ndjson`; every draft to `data/autoreply/drafts.ndjson`.
+
+### How the confidence threshold works
+
+The model self-scores each draft with a `confidence` value between 0 and 1: how sure it is that the reply is correct, complete, and safe to send without a human looking at it. `AUTOREPLY_MIN_CONFIDENCE` (default **0.78**) is the cutoff:
+
+- In **draft mode** the threshold changes nothing - you always get the notification and decide yourself. The score is shown so you learn how the model calibrates.
+- In **auto mode** a draft below the threshold is never sent. It is delivered as a review notification instead, with `confidence below minimum threshold` in the reasons.
+
+The threshold is necessary but not sufficient. In auto mode a reply is only sent when **all** of these hold:
+
+| Gate | Blocks when |
+|---|---|
+| Confidence | `confidence < AUTOREPLY_MIN_CONFIDENCE` |
+| Model flags | model set `should_send=false` or `needs_review=true` (it must do so for ambiguous, emotional, legal, financial, or fact-dependent messages) |
+| Sensitive topics | incoming text matches regex lists for money, legal, medical, credentials/OTP, or scheduling terms |
+| Message shape | incoming text empty, longer than 280 chars, or spanning 3+ lines; draft empty or longer than 280 chars |
+| Cooldown | an auto-send already happened in this chat within `AUTOREPLY_AUTO_SEND_COOLDOWN_MS` (default 10 min) |
+| Duplicate | this exact inbound message was already processed into a draft |
+| Groups | group chats are never auto-answered unless `AUTOREPLY_ALLOW_GROUP_AUTO=1`, and even then only when the operator is explicitly @-mentioned |
+
+Tuning: raise the threshold (e.g. `0.9`) to make auto mode very conservative; lower it only after reviewing drafts in draft mode for a while and confirming the scores match your judgment. Start with `draft` mode for everything, and enable `auto` only for narrow contact scopes and time windows.
+
+### Where the drafts go: notification channels
+
+Pick **one** channel; the wizard guides you through the credentials for each:
+
+```bash
+npm run autoreply:setup-notify
+```
+
+| Channel | What it looks like | Needs |
+|---|---|---|
+| **Telegram** | a bot DMs you each draft | free bot via @BotFather (2 min) |
+| **Slack** | drafts post into a channel or DM | incoming webhook, or bot token + channel |
+| **Your own WhatsApp number** | the bridge messages your "Message yourself" chat or a second number - no extra app | just the number |
+| **Generic webhook** | raw JSON POST to any URL | your endpoint |
+
+The choice is stored as `AUTOREPLY_NOTIFY_CHANNEL` in `.env`; when set, only that channel is used. The WhatsApp channel has built-in loop protection: messages in the notify chat are excluded from autoreply processing, so a notification can never generate a draft about itself.
+
+Step-by-step guides: [docs/sop-notifications-human.md](docs/sop-notifications-human.md) (for people) and [docs/sop-notifications-agent.md](docs/sop-notifications-agent.md) (for AI agents doing the setup).
+
+### Controlling the policy
+
+```bash
+TOKEN=$(grep '^AUTOREPLY_TOKEN=' .env | cut -d= -f2)
+
+# see current policy
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8081/policy
+
+# draft mode for everything (the safe default)
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  http://127.0.0.1:8081/policy \
+  -d '{"mode":"draft","scope":"all","contacts":[],"groups":[],"active_until":null,"active_hours":null}'
+
+# kill switch
+npm run autoreply:off
 ```
 
 Full reference (env vars, routes, policy modes, safety gates): [docs/autoreply.md](docs/autoreply.md).

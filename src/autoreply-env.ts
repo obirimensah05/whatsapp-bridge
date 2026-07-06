@@ -48,6 +48,22 @@ export const AUTOREPLY_NOTIFY_WEBHOOK_URL = process.env.AUTOREPLY_NOTIFY_WEBHOOK
 export const AUTOREPLY_NOTIFY_WEBHOOK_TOKEN = process.env.AUTOREPLY_NOTIFY_WEBHOOK_TOKEN?.trim() || null
 export const AUTOREPLY_TELEGRAM_BOT_TOKEN = process.env.AUTOREPLY_TELEGRAM_BOT_TOKEN?.trim() || null
 export const AUTOREPLY_TELEGRAM_CHAT_ID = process.env.AUTOREPLY_TELEGRAM_CHAT_ID?.trim() || null
+export const AUTOREPLY_SLACK_WEBHOOK_URL = process.env.AUTOREPLY_SLACK_WEBHOOK_URL?.trim() || null
+export const AUTOREPLY_SLACK_BOT_TOKEN = process.env.AUTOREPLY_SLACK_BOT_TOKEN?.trim() || null
+export const AUTOREPLY_SLACK_CHANNEL = process.env.AUTOREPLY_SLACK_CHANNEL?.trim() || null
+export const AUTOREPLY_NOTIFY_WA_TO = process.env.AUTOREPLY_NOTIFY_WA_TO?.trim() || null
+export const AUTOREPLY_NOTIFY_WA_SESSION = process.env.AUTOREPLY_NOTIFY_WA_SESSION?.trim() || null
+
+export const NOTIFY_CHANNELS = ['telegram', 'slack', 'whatsapp', 'webhook'] as const
+export type NotifyChannel = (typeof NOTIFY_CHANNELS)[number]
+export const AUTOREPLY_NOTIFY_CHANNEL: NotifyChannel | null = (() => {
+  const raw = process.env.AUTOREPLY_NOTIFY_CHANNEL?.trim().toLowerCase() || null
+  if (!raw) return null
+  if (!(NOTIFY_CHANNELS as readonly string[]).includes(raw)) {
+    throw new Error(`[autoreply/env] AUTOREPLY_NOTIFY_CHANNEL must be one of: ${NOTIFY_CHANNELS.join(', ')} (got "${raw}")`)
+  }
+  return raw as NotifyChannel
+})()
 export const AUTOREPLY_STYLE_CORPUS_PATH = process.env.AUTOREPLY_STYLE_CORPUS_PATH?.trim() || join(AUTOREPLY_DATA_DIR, 'style-corpus.md')
 export const AUTOREPLY_CLAUDE_BIN = process.env.AUTOREPLY_CLAUDE_BIN?.trim() || 'claude'
 export const AUTOREPLY_MODEL = process.env.AUTOREPLY_MODEL?.trim() || 'sonnet'

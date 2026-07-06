@@ -8,7 +8,7 @@ This repo includes a local autoreply service that sits beside `whatsapp-bridge`.
 - accepts immediate webhook calls from `whatsapp-bridge`
 - builds a style corpus from outbound WhatsApp history plus second-brain content
 - generates draft replies in the operator's voice with Claude CLI
-- sends live draft notifications to Telegram
+- sends live draft notifications to Telegram, Slack, your own WhatsApp number, or a generic webhook (selectable)
 - can auto-send through the local `whatsapp-bridge` API when policy + safety checks allow it
 - stores policy in `data/autoreply/policy.json`
 - logs drafts to `data/autoreply/drafts.ndjson`
@@ -60,11 +60,28 @@ AUTOREPLY_ALLOW_GROUP_AUTO=0
 AUTOREPLY_WA_API_BASE=http://127.0.0.1:8080/v1
 AUTOREPLY_WA_API_TOKEN=<whatsapp-bridge bearer token>
 
-# draft notification options
-AUTOREPLY_NOTIFY_WEBHOOK_URL=
-AUTOREPLY_NOTIFY_WEBHOOK_TOKEN=
+# draft notification channel - run `npm run autoreply:setup-notify` for a guided setup.
+# One of: telegram | slack | whatsapp | webhook. When set, ONLY that channel is used.
+# When unset, legacy fallback order applies: webhook -> telegram -> slack -> whatsapp.
+AUTOREPLY_NOTIFY_CHANNEL=
+
+# telegram
 AUTOREPLY_TELEGRAM_BOT_TOKEN=
 AUTOREPLY_TELEGRAM_CHAT_ID=
+
+# slack (either an incoming webhook URL, or bot token + channel id)
+AUTOREPLY_SLACK_WEBHOOK_URL=
+AUTOREPLY_SLACK_BOT_TOKEN=
+AUTOREPLY_SLACK_CHANNEL=
+
+# your own whatsapp number (digits only, no +) - delivered via the bridge itself.
+# Replies typed in that chat are ignored by autoreply (loop protection).
+AUTOREPLY_NOTIFY_WA_TO=
+AUTOREPLY_NOTIFY_WA_SESSION=
+
+# generic webhook
+AUTOREPLY_NOTIFY_WEBHOOK_URL=
+AUTOREPLY_NOTIFY_WEBHOOK_TOKEN=
 
 # whatsapp-bridge -> autoreply webhook wiring
 WEBHOOK_URL=http://127.0.0.1:8081/webhook
@@ -159,9 +176,28 @@ This is the route `whatsapp-bridge` calls for inbound events. It now accepts bot
   - `data/autoreply/audit.ndjson`
   - `data/autoreply/drafts.ndjson`
 
+## Notification channels
+
+Draft and inbound notifications can go to **Telegram**, **Slack**, **your own
+WhatsApp number** (self-chat or a second number, sent through the bridge
+itself), or a **generic webhook**. Pick one with the guided wizard:
+
+```bash
+npm run autoreply:setup-notify
+```
+
+Step-by-step setup guides:
+
+- [sop-notifications-human.md](sop-notifications-human.md) - for a person following along
+- [sop-notifications-agent.md](sop-notifications-agent.md) - for an AI agent doing the setup
+
+When `AUTOREPLY_NOTIFY_CHANNEL` is set, only that channel is used. The
+WhatsApp channel excludes its own notify chat from autoreply processing so
+notifications can never loop back into new drafts.
+
 ## Practical rollout recommendation
 
 1. Keep global mode on `draft`
-2. Use Telegram notifications to review generated replies
+2. Pick a notification channel (`npm run autoreply:setup-notify`) and review generated replies there
 3. Enable `auto` only for narrow contact scopes + time windows
 4. Leave group auto-send disabled unless you explicitly want it

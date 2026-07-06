@@ -33,6 +33,7 @@ export interface AutoReplyAuditEntry {
     | 'draft_logged'
     | 'auto_sent'
     | 'safety_blocked'
+    | 'notify_chat_skipped'
   data: Record<string, unknown>
 }
 
