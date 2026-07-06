@@ -292,6 +292,7 @@ app.post('/webhook', async (req, reply) => {
       incomingText,
       contactName: message?.from_display_name ?? null,
       isGroup,
+      chatJid: message?.chat_jid ?? null,
     }).catch((error: unknown) => {
       appendAudit('safety_blocked', {
         session: payload.session ?? null,

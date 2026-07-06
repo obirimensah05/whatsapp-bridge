@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Self-hosted WhatsApp bridge for AI agents — REST + MCP + web UI, built on Baileys.",
@@ -42,6 +42,7 @@
     "autoreply:logs": "tail -n 80 -f logs/wa-autoreply.out.log"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@whiskeysockets/baileys": "^7.0.0-rc13",
     "better-sqlite3": "^11.10.0",

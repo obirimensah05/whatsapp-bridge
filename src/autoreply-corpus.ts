@@ -161,6 +161,22 @@ async function buildSecondBrainSection(noteLimit: number): Promise<string> {
 async function main(): Promise<void> {
   const { waLimit, noteLimit } = parseArgs()
   const generatedAt = new Date().toISOString()
+
+  // Second brain is optional: without one, the corpus is built entirely from
+  // the operator's own sent WhatsApp messages.
+  let brainSection = ''
+  try {
+    brainSection = await buildSecondBrainSection(noteLimit)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    brainSection = [
+      '## Second-brain writing corpus',
+      '',
+      `- skipped (${reason.replace(/\s+/g, ' ').trim()})`,
+      '- Corpus built from WhatsApp outbound history only.',
+    ].join('\n')
+  }
+
   const sections = [
     '# Operator autoreply style corpus',
     '',
@@ -170,7 +186,7 @@ async function main(): Promise<void> {
     '',
     buildWhatsAppSection(waLimit),
     '',
-    await buildSecondBrainSection(noteLimit),
+    brainSection,
     '',
   ]
 

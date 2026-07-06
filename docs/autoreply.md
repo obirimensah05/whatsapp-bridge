@@ -7,7 +7,7 @@ This repo includes a local autoreply service that sits beside `whatsapp-bridge`.
 - runs a local HTTP service for autoreply control
 - accepts immediate webhook calls from `whatsapp-bridge`
 - builds a style corpus from outbound WhatsApp history plus second-brain content
-- generates draft replies in the operator's voice with Claude CLI
+- generates draft replies in the operator's voice with a configurable LLM (Claude CLI by default, Anthropic API, or any OpenAI-compatible API)
 - sends live draft notifications to Telegram, Slack, your own WhatsApp number, or a generic webhook (selectable)
 - can auto-send through the local `whatsapp-bridge` API when policy + safety checks allow it
 - stores policy in `data/autoreply/policy.json`
@@ -52,6 +52,17 @@ AUTOREPLY_STYLE_CORPUS_PATH=./data/autoreply/style-corpus.md
 AUTOREPLY_DEFAULT_SESSION=main
 AUTOREPLY_SECOND_BRAIN_ROOT=/path/to/your/notes
 AUTOREPLY_MODEL=sonnet
+
+# LLM provider for draft generation - claude-cli (default) | anthropic | openai
+# claude-cli: shells out to the local `claude` CLI (uses AUTOREPLY_CLAUDE_BIN / AUTOREPLY_MODEL).
+# anthropic:  Anthropic API via the official SDK (key from AUTOREPLY_LLM_API_KEY or ANTHROPIC_API_KEY;
+#             model defaults to claude-opus-4-8).
+# openai:     ANY OpenAI-compatible chat-completions endpoint - OpenAI, OpenRouter, Groq,
+#             Mistral, Ollama, LM Studio... Set AUTOREPLY_LLM_BASE_URL + AUTOREPLY_LLM_MODEL.
+AUTOREPLY_LLM_PROVIDER=claude-cli
+AUTOREPLY_LLM_API_KEY=
+AUTOREPLY_LLM_BASE_URL=
+AUTOREPLY_LLM_MODEL=
 AUTOREPLY_MIN_CONFIDENCE=0.78
 AUTOREPLY_AUTO_SEND_COOLDOWN_MS=600000
 AUTOREPLY_ALLOW_GROUP_AUTO=0
@@ -175,6 +186,46 @@ This is the route `whatsapp-bridge` calls for inbound events. It now accepts bot
 - inspect:
   - `data/autoreply/audit.ndjson`
   - `data/autoreply/drafts.ndjson`
+
+## LLM providers
+
+Draft generation goes through `src/autoreply-llm.ts` and supports three providers via `AUTOREPLY_LLM_PROVIDER`:
+
+| Provider | What it uses | Needs |
+|---|---|---|
+| `claude-cli` (default) | the local `claude` CLI | Claude Code installed, no API key |
+| `anthropic` | Anthropic Messages API | `AUTOREPLY_LLM_API_KEY` (or `ANTHROPIC_API_KEY`); optional `AUTOREPLY_LLM_MODEL` (default `claude-opus-4-8`) |
+| `openai` | any OpenAI-compatible `/chat/completions` endpoint | `AUTOREPLY_LLM_MODEL` required; `AUTOREPLY_LLM_BASE_URL` (default `https://api.openai.com/v1`); key optional for local endpoints like Ollama |
+
+Example - OpenRouter:
+
+```bash
+AUTOREPLY_LLM_PROVIDER=openai
+AUTOREPLY_LLM_BASE_URL=https://openrouter.ai/api/v1
+AUTOREPLY_LLM_API_KEY=sk-or-...
+AUTOREPLY_LLM_MODEL=anthropic/claude-sonnet-4.6
+```
+
+Example - local Ollama:
+
+```bash
+AUTOREPLY_LLM_PROVIDER=openai
+AUTOREPLY_LLM_BASE_URL=http://127.0.0.1:11434/v1
+AUTOREPLY_LLM_MODEL=llama3.1
+```
+
+## Context sources (second brain optional)
+
+Each draft is grounded in two things, and neither requires setup beyond the bridge itself:
+
+1. **Style corpus** - built from your own sent WhatsApp messages
+   (`npm run autoreply:build-corpus`). If the corpus file does not exist when the
+   first draft is generated, it is auto-built from outbound history. The
+   second-brain section of the corpus is optional; without one the corpus is
+   WhatsApp-only.
+2. **Reference context** - relevant excerpts from **your own WhatsApp history**:
+   the recent conversation with that chat plus keyword matches across all stored
+   messages (`src/autoreply-context.ts`). No external notes source is required.
 
 ## Notification channels
 

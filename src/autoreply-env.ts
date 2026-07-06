@@ -67,6 +67,19 @@ export const AUTOREPLY_NOTIFY_CHANNEL: NotifyChannel | null = (() => {
 export const AUTOREPLY_STYLE_CORPUS_PATH = process.env.AUTOREPLY_STYLE_CORPUS_PATH?.trim() || join(AUTOREPLY_DATA_DIR, 'style-corpus.md')
 export const AUTOREPLY_CLAUDE_BIN = process.env.AUTOREPLY_CLAUDE_BIN?.trim() || 'claude'
 export const AUTOREPLY_MODEL = process.env.AUTOREPLY_MODEL?.trim() || 'sonnet'
+
+export const LLM_PROVIDERS = ['claude-cli', 'anthropic', 'openai'] as const
+export type LlmProvider = (typeof LLM_PROVIDERS)[number]
+export const AUTOREPLY_LLM_PROVIDER: LlmProvider = (() => {
+  const raw = process.env.AUTOREPLY_LLM_PROVIDER?.trim().toLowerCase() || 'claude-cli'
+  if (!(LLM_PROVIDERS as readonly string[]).includes(raw)) {
+    throw new Error(`[autoreply/env] AUTOREPLY_LLM_PROVIDER must be one of: ${LLM_PROVIDERS.join(', ')} (got "${raw}")`)
+  }
+  return raw as LlmProvider
+})()
+export const AUTOREPLY_LLM_API_KEY = process.env.AUTOREPLY_LLM_API_KEY?.trim() || null
+export const AUTOREPLY_LLM_BASE_URL = (process.env.AUTOREPLY_LLM_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/$/, '')
+export const AUTOREPLY_LLM_MODEL = process.env.AUTOREPLY_LLM_MODEL?.trim() || null
 export const AUTOREPLY_MIN_CONFIDENCE = Number(process.env.AUTOREPLY_MIN_CONFIDENCE ?? '0.78')
 export const AUTOREPLY_AUTO_SEND_COOLDOWN_MS = Number(process.env.AUTOREPLY_AUTO_SEND_COOLDOWN_MS ?? `${10 * 60 * 1000}`)
 export const AUTOREPLY_ALLOW_GROUP_AUTO = process.env.AUTOREPLY_ALLOW_GROUP_AUTO === '1'

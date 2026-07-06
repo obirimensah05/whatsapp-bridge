@@ -210,7 +210,7 @@ npm run autoreply:setup-notify  # guided setup: pick where draft notifications g
 1. **Inbound message arrives.** The bridge POSTs it to the sidecar via the inbound webhook (`WEBHOOK_URL=http://127.0.0.1:8081/webhook`).
 2. **Policy check.** The sidecar evaluates `data/autoreply/policy.json`: is the mode `draft`, `auto`, or `off`? Is this chat in scope (`all` / specific `contacts` / `groups` / `mixed`)? Are we inside the configured `active_hours` / `active_until` window? If any check fails, nothing happens beyond an audit log entry.
 3. **Enrichment.** For voice notes the sidecar waits for the transcript; for text it pulls the stored message so quoted context is available.
-4. **Draft generation.** Claude (via the local `claude` CLI) writes a reply in the operator's voice, grounded in a style corpus built from your own outbound message history. The model returns JSON: `reply`, `confidence` (0-1), `should_send`, `needs_review`, `reasons`.
+4. **Draft generation.** Your configured LLM writes a reply in the operator's voice (see "Which LLM writes the drafts" below). It is grounded in a style corpus built from your own sent messages (auto-built from WhatsApp history on the first draft if missing) and in reference context pulled from your own WhatsApp history - the recent conversation with that chat plus keyword matches across all stored messages. The model returns JSON: `reply`, `confidence` (0-1), `should_send`, `needs_review`, `reasons`.
 5. **Notification.** The draft is delivered to your chosen channel - Telegram, Slack, your own WhatsApp number, or a webhook (see below) - together with the incoming message, the confidence score, and the model's reasons.
 6. **Auto-send (only in `auto` mode).** If every safety gate passes, the reply is sent through the bridge's `/v1/send`. If any gate blocks it, the draft is delivered as a notification flagged `needs_review` instead - it fails safe to human review.
 
@@ -236,6 +236,18 @@ The threshold is necessary but not sufficient. In auto mode a reply is only sent
 | Groups | group chats are never auto-answered unless `AUTOREPLY_ALLOW_GROUP_AUTO=1`, and even then only when the operator is explicitly @-mentioned |
 
 Tuning: raise the threshold (e.g. `0.9`) to make auto mode very conservative; lower it only after reviewing drafts in draft mode for a while and confirming the scores match your judgment. Start with `draft` mode for everything, and enable `auto` only for narrow contact scopes and time windows.
+
+### Which LLM writes the drafts
+
+Any of them. `AUTOREPLY_LLM_PROVIDER` in `.env` picks the backend:
+
+| Provider | What it uses | Needs |
+|---|---|---|
+| `claude-cli` (default) | the local `claude` CLI | Claude Code installed - no API key |
+| `anthropic` | Anthropic API (official SDK) | `AUTOREPLY_LLM_API_KEY` or `ANTHROPIC_API_KEY` |
+| `openai` | any OpenAI-compatible endpoint - OpenAI, OpenRouter, Groq, Mistral, Ollama, LM Studio | `AUTOREPLY_LLM_BASE_URL` + `AUTOREPLY_LLM_MODEL` |
+
+Full configuration examples: [docs/autoreply.md](docs/autoreply.md).
 
 ### Where the drafts go: notification channels
 
