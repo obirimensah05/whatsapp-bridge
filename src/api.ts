@@ -183,6 +183,17 @@ export async function startApi(): Promise<void> {
 
   const tokenBuf = Buffer.from(API_TOKEN, 'utf8')
 
+  // Baseline security headers on every response. API JSON must never be
+  // cached (bearer-protected data); media may cache privately in the browser.
+  app.addHook('onSend', async (req, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff')
+    reply.header('Referrer-Policy', 'no-referrer')
+    const path = req.url.split('?')[0]
+    if (path.startsWith('/v1/') && !path.startsWith('/v1/media/')) {
+      reply.header('Cache-Control', 'no-store')
+    }
+  })
+
   app.addHook('preHandler', async (req, reply) => {
     const path = req.url.split('?')[0]
     if (path === '/v1/health' || path === '/') return

@@ -677,6 +677,7 @@ export function listConversations(session: string, limit = 100) {
        LEFT JOIN chats ch_pic
          ON ch_pic.session = @session AND ch_pic.jid = j.canonical_jid
        WHERE COALESCE(lm.ts, cc.last_msg_ts) IS NOT NULL
+         AND j.canonical_jid NOT LIKE '%@broadcast'
        ORDER BY COALESCE(lm.ts, cc.last_msg_ts) DESC
        LIMIT @limit`,
     )

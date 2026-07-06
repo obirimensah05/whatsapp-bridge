@@ -192,6 +192,12 @@ app.post('/webhook', async (req, reply) => {
   const message = typeof payload.message === 'string' ? null : payload.message
   const isTestEvent = payload.event === 'test'
 
+  // WhatsApp statuses (status@broadcast) and broadcast lists are not
+  // conversations - never draft, notify, or auto-reply for them.
+  if (!isTestEvent && typeof message?.chat_jid === 'string' && message.chat_jid.endsWith('@broadcast')) {
+    return { ok: true, skipped: 'broadcast' }
+  }
+
   // When drafts are delivered to the operator's own WhatsApp chat, never
   // process messages from that chat - it would loop notifications into drafts.
   if (!isTestEvent && isNotifyWhatsAppChat(message?.chat_jid)) {
