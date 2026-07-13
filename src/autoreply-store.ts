@@ -17,6 +17,10 @@ export interface AutoReplyPolicy {
   scope: AutoReplyScope
   contacts: string[]
   groups: string[]
+  // Persistent blacklist: these chats NEVER get an autoreply, regardless of
+  // mode/scope/time windows. Matched by normalized JID (phone or group id), so
+  // a bare phone number matches its @s.whatsapp.net JID. Highest priority.
+  blocklist: string[]
   active_until: string | null
   active_hours: ActiveHours | null
   notes: string | null
@@ -70,10 +74,27 @@ const DEFAULT_POLICY: AutoReplyPolicy = {
   scope: 'all',
   contacts: [],
   groups: [],
+  blocklist: [],
   active_until: null,
   active_hours: null,
   notes: 'Default draft-only mode for all chats.',
   updated_at: new Date(0).toISOString(),
+}
+
+// Normalize a JID (or bare phone / group id) to a comparable key: the local
+// part, minus any device suffix, lowercased. Lets a blocklist/allowlist entry
+// of "4915758273636" match "4915758273636@s.whatsapp.net", and full-JID entries
+// keep matching exactly.
+function aclKey(jid: string | null | undefined): string | null {
+  if (!jid) return null
+  const local = jid.split('@')[0]?.split(':')[0]?.trim().toLowerCase()
+  return local || null
+}
+
+function listMatches(list: string[], jid: string | null | undefined): boolean {
+  const key = aclKey(jid)
+  if (!key) return false
+  return list.some((entry) => aclKey(entry) === key)
 }
 
 function ensureDataDir(): void {
@@ -94,6 +115,7 @@ export function readPolicy(): AutoReplyPolicy {
       ...raw,
       contacts: Array.isArray(raw.contacts) ? raw.contacts : [],
       groups: Array.isArray(raw.groups) ? raw.groups : [],
+      blocklist: Array.isArray(raw.blocklist) ? raw.blocklist : [],
       active_hours: raw.active_hours ?? null,
       active_until: raw.active_until ?? null,
       notes: raw.notes ?? null,
@@ -110,6 +132,7 @@ export function writePolicy(next: Omit<AutoReplyPolicy, 'updated_at'>): AutoRepl
     ...next,
     contacts: Array.from(new Set(next.contacts.map((v) => v.trim()).filter(Boolean))),
     groups: Array.from(new Set(next.groups.map((v) => v.trim()).filter(Boolean))),
+    blocklist: Array.from(new Set(next.blocklist.map((v) => v.trim()).filter(Boolean))),
     updated_at: new Date().toISOString(),
   }
   writeFileSync(POLICY_PATH, JSON.stringify(policy, null, 2))
@@ -191,11 +214,11 @@ function isWithinHours(activeHours: ActiveHours | null, now: Date): boolean {
 function scopeAllows(policy: AutoReplyPolicy, chatJid: string | null | undefined, isGroup: boolean | null | undefined): boolean {
   if (policy.scope === 'all') return true
   if (!chatJid) return false
-  if (policy.scope === 'contacts') return !isGroup && policy.contacts.includes(chatJid)
-  if (policy.scope === 'groups') return !!isGroup && policy.groups.includes(chatJid)
+  if (policy.scope === 'contacts') return !isGroup && listMatches(policy.contacts, chatJid)
+  if (policy.scope === 'groups') return !!isGroup && listMatches(policy.groups, chatJid)
   if (policy.scope === 'mixed') {
-    if (isGroup) return policy.groups.includes(chatJid)
-    return policy.contacts.includes(chatJid)
+    if (isGroup) return listMatches(policy.groups, chatJid)
+    return listMatches(policy.contacts, chatJid)
   }
   return false
 }
@@ -207,6 +230,11 @@ export function evaluatePolicy(policy: AutoReplyPolicy, context: DecisionContext
 } {
   const now = context.now ?? new Date()
   if (policy.mode === 'off') return { active: false, mode: 'off', reason: 'policy mode is off' }
+  // Blacklist is absolute: a blocklisted chat never gets an autoreply, whatever
+  // the mode, scope, or time window says.
+  if (listMatches(policy.blocklist, context.chat_jid)) {
+    return { active: false, mode: policy.mode, reason: 'chat is blocklisted' }
+  }
   if (!isWithinUntil(policy.active_until, now)) {
     return { active: false, mode: policy.mode, reason: 'outside active_until window' }
   }

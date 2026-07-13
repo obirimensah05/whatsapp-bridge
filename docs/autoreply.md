@@ -177,6 +177,36 @@ curl -X PUT \
   }'
 ```
 
+## Allow / block lists
+
+Two persistent, independent controls decide which chats get an autoreply. They live in `data/autoreply/policy.json` and are read fresh on every inbound message, so changes are live with **no restart**.
+
+- **Blocklist (blacklist)** - `policy.blocklist`. A listed chat **never** gets an autoreply, whatever the mode, scope, or time window. Use it for *"reply to everyone except these"*. Absolute, highest priority.
+- **Allowlist (whitelist)** - `policy.contacts` + `policy.groups` under a whitelist `scope` (`contacts` / `groups` / `mixed`). When set, **only** those chats get an autoreply. Use it for *"reply only to these"*.
+
+Entries can be a full JID (`15555550123@s.whatsapp.net`, `123-456@g.us`) or a bare phone / group id - matching is by normalized local part, so `15555550123` matches `15555550123@s.whatsapp.net` (and its device-suffixed variants).
+
+### Managing them from the terminal
+
+```bash
+npm run autoreply:acl                          # show mode, scope, both lists
+npm run autoreply:acl block add 15555550123    # blacklist a chat (scope stays "all")
+npm run autoreply:acl block rm  15555550123
+npm run autoreply:acl block clear
+npm run autoreply:acl allow add 15555550123    # whitelist a contact -> scope auto-flips to "contacts"
+npm run autoreply:acl allow add 123-456@g.us   # whitelist a group  -> scope becomes "mixed"
+npm run autoreply:acl allow rm  15555550123
+npm run autoreply:acl allow clear              # scope reverts to "all"
+npm run autoreply:acl scope all|contacts|groups|mixed   # override the whitelist scope
+```
+
+`allow add`/`rm` auto-derive `scope` from the list contents so the whitelist takes effect (and `allow clear` reverts to `all`). `block` never changes scope - a blocklist works in every mode, including `scope: all`. So the two common setups are:
+
+- **Blacklist mode:** `scope: all` + blocklist entries → reply to everyone except the blocked chats.
+- **Whitelist mode:** `allow add ...` → reply only to the allowed chats.
+
+Over HTTP, `PUT /policy` accepts a `blocklist` array; omitting it **preserves** the existing blocklist (so `npm run autoreply:off` doesn't wipe it) - pass `[]` to clear explicitly.
+
 ### `POST /webhook`
 Bearer auth required.
 

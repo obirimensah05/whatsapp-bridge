@@ -72,6 +72,9 @@ const updatePolicySchema = z.object({
   scope: z.enum(['all', 'contacts', 'groups', 'mixed']).default('all'),
   contacts: z.array(z.string()).default([]),
   groups: z.array(z.string()).default([]),
+  // Optional so a PUT that omits it PRESERVES the existing blocklist rather
+  // than wiping it (e.g. `npm run autoreply:off`). Pass [] to clear explicitly.
+  blocklist: z.array(z.string()).optional(),
   active_until: z.string().datetime({ offset: true }).nullable().optional(),
   active_hours: activeHoursSchema.nullable().optional(),
   notes: z.string().nullable().optional(),
@@ -186,6 +189,7 @@ app.put('/policy', async (req, reply) => {
     scope: parsed.data.scope,
     contacts: parsed.data.contacts,
     groups: parsed.data.groups,
+    blocklist: parsed.data.blocklist ?? previous.blocklist,
     active_until: parsed.data.active_until ?? null,
     active_hours: parsed.data.active_hours ? {
       start: parsed.data.active_hours.start,

@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-bridge",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Self-hosted WhatsApp bridge for AI agents — REST + MCP + web UI, built on Baileys.",
@@ -38,7 +38,8 @@
     "autoreply:status": "TOKEN=$(grep '^AUTOREPLY_TOKEN=' .env | head -1 | cut -d= -f2); curl -s -H \"Authorization: Bearer $TOKEN\" http://127.0.0.1:8081/policy; echo",
     "autoreply:off": "TOKEN=$(grep '^AUTOREPLY_TOKEN=' .env | head -1 | cut -d= -f2); curl -s -X PUT -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" http://127.0.0.1:8081/policy -d '{\"mode\":\"off\",\"scope\":\"all\",\"contacts\":[],\"groups\":[],\"active_until\":null,\"active_hours\":null,\"notes\":\"off via npm run autoreply:off\"}'; echo",
     "autoreply:health": "curl -s http://127.0.0.1:8081/health; echo",
-    "autoreply:logs": "tail -n 80 -f logs/wa-autoreply.out.log"
+    "autoreply:logs": "tail -n 80 -f logs/wa-autoreply.out.log",
+    "autoreply:acl": "tsx src/autoreply-acl-cli.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
