@@ -146,6 +146,23 @@ export function resolveBaseUrl(config: Pick<ModelConfig, 'base_url'>): string {
   return (config.base_url ?? AUTOREPLY_LLM_BASE_URL).replace(/\/$/, '')
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0'])
+
+// The provider API key is sent as a Bearer token to base_url. Refuse to ship it
+// in plaintext to a non-local host over http (which would also be an
+// authenticated SSRF primitive) - require https for anything but localhost.
+export function assertSafeBaseUrl(baseUrl: string): void {
+  let u: URL
+  try {
+    u = new URL(baseUrl)
+  } catch {
+    throw new Error(`[autoreply/model] invalid base_url: ${baseUrl}`)
+  }
+  if (u.protocol === 'https:') return
+  if (u.protocol === 'http:' && LOCAL_HOSTS.has(u.hostname.replace(/^\[|\]$/g, ''))) return
+  throw new Error(`[autoreply/model] refusing to send the API key to ${baseUrl} over http - use https, or a localhost endpoint`)
+}
+
 function isLocalEndpoint(url: string): boolean {
   return /(^|\/\/)(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:|\/|$)/.test(url)
 }
@@ -272,6 +289,11 @@ async function verifyOpenAi(config: ModelConfigInput): Promise<VerifyResult> {
   }
   if (!model) {
     return { ok: false, provider: config.provider, model, detail: 'openai requires a model (e.g. gpt-5)' }
+  }
+  try {
+    assertSafeBaseUrl(baseUrl)
+  } catch (error) {
+    return { ok: false, provider: config.provider, model, detail: errorMessage(error) }
   }
   try {
     const models = await fetchOpenAiModels(baseUrl, key)

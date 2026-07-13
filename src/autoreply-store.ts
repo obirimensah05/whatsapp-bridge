@@ -83,7 +83,7 @@ const DEFAULT_POLICY: AutoReplyPolicy = {
 
 // Normalize a JID (or bare phone / group id) to a comparable key: the local
 // part, minus any device suffix, lowercased. Lets a blocklist/allowlist entry
-// of "4915758273636" match "4915758273636@s.whatsapp.net", and full-JID entries
+// of "491234567890" match "491234567890@s.whatsapp.net", and full-JID entries
 // keep matching exactly.
 function aclKey(jid: string | null | undefined): string | null {
   if (!jid) return null

@@ -203,12 +203,15 @@ A separate local process (`src/autoreply-*.ts`) that turns the bridge into a dra
 npm run autoreply               # boot sidecar
 npm run autoreply:build-corpus  # rebuild style corpus from WA history
 npm run autoreply:setup-notify  # guided setup: pick where draft notifications go
+npm run autoreply:model         # show / switch which LLM writes drafts (see below)
+npm run autoreply:acl           # manage the allow/block lists (see below)
+npm run autoreply:link -- <url> # preview the link context a message would build
 ```
 
 ### How a message flows through it
 
 1. **Inbound message arrives.** The bridge POSTs it to the sidecar via the inbound webhook (`WEBHOOK_URL=http://127.0.0.1:8081/webhook`).
-2. **Policy check.** The sidecar evaluates `data/autoreply/policy.json`: is the mode `draft`, `auto`, or `off`? Is this chat in scope (`all` / specific `contacts` / `groups` / `mixed`)? Are we inside the configured `active_hours` / `active_until` window? If any check fails, nothing happens beyond an audit log entry.
+2. **Policy check.** The sidecar evaluates `data/autoreply/policy.json`: is the mode `draft`, `auto`, or `off`? Is this chat **blocklisted** (never replied to) or, when a whitelist is set, in scope (`all` / specific `contacts` / `groups` / `mixed`)? Are we inside the configured `active_hours` / `active_until` window? If any check fails, nothing happens beyond an audit log entry. Manage the lists with `npm run autoreply:acl` (see "Allow / block lists").
 3. **Enrichment.** For voice notes the sidecar waits for the transcript; for text it pulls the stored message so quoted context is available.
 4. **Draft generation.** Your configured LLM writes a reply in the operator's voice (see "Which LLM writes the drafts" below). It is grounded in a style corpus built from your own sent messages (auto-built from WhatsApp history on the first draft if missing) and in reference context pulled from your own WhatsApp history - the recent conversation with that chat plus keyword matches across all stored messages. The model returns JSON: `reply`, `confidence` (0-1), `should_send`, `needs_review`, `reasons`.
 5. **Notification.** The draft is delivered to your chosen channel - Telegram, Slack, your own WhatsApp number, or a webhook (see below) - together with the incoming message, the confidence score, and the model's reasons.
@@ -239,15 +242,40 @@ Tuning: raise the threshold (e.g. `0.9`) to make auto mode very conservative; lo
 
 ### Which LLM writes the drafts
 
-Any of them. `AUTOREPLY_LLM_PROVIDER` in `.env` picks the backend:
+Any of them, **switchable at runtime** (no restart) - the `.env` vars are only the fallback default:
+
+```bash
+npm run autoreply:model                       # show active model + all providers
+npm run autoreply:model -- test openai gpt-5  # connectivity check, no switch
+npm run autoreply:model -- use openai gpt-5   # switch (gated on a live connectivity check)
+npm run autoreply:model -- use codex-cli gpt-5-codex
+npm run autoreply:model -- use openai llama3.1 --base-url http://127.0.0.1:11434/v1  # local, free
+```
 
 | Provider | What it uses | Needs |
 |---|---|---|
 | `claude-cli` (default) | the local `claude` CLI | Claude Code installed - no API key |
-| `anthropic` | Anthropic API (official SDK) | `AUTOREPLY_LLM_API_KEY` or `ANTHROPIC_API_KEY` |
-| `openai` | any OpenAI-compatible endpoint - OpenAI, OpenRouter, Groq, Mistral, Ollama, LM Studio | `AUTOREPLY_LLM_BASE_URL` + `AUTOREPLY_LLM_MODEL` |
+| `codex-cli` | the local `codex` CLI (`codex exec`) | Codex CLI + `codex login` - no API key |
+| `anthropic` | Anthropic API (official SDK) | `ANTHROPIC_API_KEY` or `AUTOREPLY_LLM_API_KEY` |
+| `openai` | any OpenAI-compatible endpoint - OpenAI (gpt-5), OpenRouter, Groq, Mistral, Ollama, LM Studio | model + `OPENAI_API_KEY` (key optional for local endpoints) |
 
-Full configuration examples: [docs/autoreply.md](docs/autoreply.md).
+A switch only lands if the provider is authed/reachable **and** the model actually responds. `--key` stores the key in `.env` (never sent over http to a non-localhost host). Full configuration examples: [docs/autoreply.md](docs/autoreply.md).
+
+### Allow / block lists
+
+Two persistent controls, managed with `npm run autoreply:acl`:
+
+```bash
+npm run autoreply:acl                         # show current lists
+npm run autoreply:acl block add 491234567890  # blacklist: never reply to this chat
+npm run autoreply:acl allow add 491700000000  # whitelist: reply only to allowed chats
+npm run autoreply:acl allow clear             # back to replying to everyone
+```
+
+- **Blocklist** is absolute - a listed chat never gets a reply, in any mode/scope. "Reply to everyone except these."
+- **Allowlist** (`allow add`) flips to whitelist mode - only listed chats get a reply. "Reply only to these."
+
+Details: [docs/autoreply.md](docs/autoreply.md).
 
 ### Where the drafts go: notification channels
 
@@ -341,6 +369,9 @@ All variables are read from `.env` at startup; all are optional with sensible de
 | `npm run autoreply` | Boot the local autoreply sidecar (separate process). See [docs/autoreply.md](docs/autoreply.md). |
 | `npm run autoreply:dev` | Same, with `tsx --watch`. |
 | `npm run autoreply:build-corpus` | Rebuild the style corpus from outbound WhatsApp history + second-brain notes. |
+| `npm run autoreply:model` | Show or switch which LLM writes drafts (`current` / `list` / `test` / `use`). |
+| `npm run autoreply:acl` | Manage the autoreply allow/block lists. |
+| `npm run autoreply:link -- <url>` | Preview the link context a message would build. |
 | `npm run typecheck` | `tsc --noEmit` — strict mode is on. |
 
 See [COMMANDS.md](COMMANDS.md) for the full reference including REST examples and common ops.

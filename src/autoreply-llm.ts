@@ -17,6 +17,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { AUTOREPLY_CLAUDE_BIN, AUTOREPLY_MODEL } from './autoreply-env.js'
 import {
   type ModelConfig,
+  assertSafeBaseUrl,
   completeViaCodexCli,
   readModelConfig,
   resolveApiKey,
@@ -55,6 +56,7 @@ async function completeViaOpenAiCompatible(prompt: string, config: ModelConfig):
     throw new Error('[autoreply/llm] openai provider requires a model (e.g. gpt-5)')
   }
   const baseUrl = resolveBaseUrl(config)
+  assertSafeBaseUrl(baseUrl)
   const apiKey = resolveApiKey('openai')
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',

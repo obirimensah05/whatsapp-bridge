@@ -63,6 +63,8 @@ function fail(message: string): never {
 }
 
 function upsertEnvVar(name: string, value: string): void {
+  // A newline in the value would inject extra .env lines - reject it.
+  if (/[\r\n]/.test(value)) fail('--key value must not contain newlines')
   const line = `${name}=${value}`
   let contents = existsSync(ENV_FILE_PATH) ? readFileSync(ENV_FILE_PATH, 'utf8') : ''
   const pattern = new RegExp(`^${name}=.*$`, 'm')

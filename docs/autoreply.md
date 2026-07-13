@@ -53,6 +53,11 @@ AUTOREPLY_DEFAULT_SESSION=main
 AUTOREPLY_SECOND_BRAIN_ROOT=/path/to/your/notes
 AUTOREPLY_MODEL=sonnet
 
+# Optional: external YouTube-transcript fetcher for link context. Expected to
+# accept `<url> --text-only --timestamps` and print the transcript to stdout.
+# Unset = YouTube links fall back to a generic page fetch (title/description).
+AUTOREPLY_YT_TRANSCRIPT_SCRIPT=
+
 # LLM provider for draft generation - claude-cli (default) | codex-cli | anthropic | openai
 # NOTE: these env vars are only the FALLBACK default. Switch at runtime with
 #       `npm run autoreply:model -- use <provider> <model>` (writes model-config.json).
@@ -283,6 +288,17 @@ Each draft is grounded in two things, and neither requires setup beyond the brid
 2. **Reference context** - relevant excerpts from **your own WhatsApp history**:
    the recent conversation with that chat plus keyword matches across all stored
    messages (`src/autoreply-context.ts`). No external notes source is required.
+3. **Link context** - if the incoming message contains a URL, its content is
+   fetched so the draft can react to it (`src/autoreply-link-context.ts`).
+   Preview it with `npm run autoreply:link -- "<message or url>"`.
+
+Security note on link context: link URLs come from inbound (untrusted) messages,
+so the fetcher **blocks any host that resolves to a private / loopback /
+link-local / cloud-metadata address** (SSRF guard), re-validates on each
+redirect hop, and caps the response size. Fetched content is wrapped in
+`<untrusted>` markers in the prompt and the model is instructed to treat it as
+data, never as instructions. YouTube links use `AUTOREPLY_YT_TRANSCRIPT_SCRIPT`
+when set, otherwise fall back to the generic page fetch.
 
 ## Notification channels
 
