@@ -8,6 +8,55 @@ const log = pino({ level: 'info' }).child({ mod: 'webhook' })
 const RETRY_DELAYS_MS = [1_000, 3_000]
 const PER_ATTEMPT_TIMEOUT_MS = 5_000
 
+// Operator-set target, validated once for parity with the media-fetch SSRF
+// guard. Loopback is the EXPECTED default (the autoreply sidecar on :8081), so
+// unlike media_url it stays allowed; we hard-fail only clearly-wrong configs
+// (bad scheme, embedded credentials) and warn once on private-LAN targets.
+type WebhookUrlVerdict = { ok: true; warning?: string } | { ok: false; reason: string }
+
+function classifyWebhookUrl(raw: string): WebhookUrlVerdict {
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    return { ok: false, reason: 'WEBHOOK_URL is not a valid URL' }
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    return { ok: false, reason: `WEBHOOK_URL must be http(s), got ${u.protocol}` }
+  }
+  if (u.username || u.password) {
+    return { ok: false, reason: 'WEBHOOK_URL must not embed credentials' }
+  }
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost')
+  if (isLoopback) return { ok: true }
+  const [a, b] = host.split('.').map(Number)
+  const isPrivateV4 = Number.isInteger(a) && (
+    a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+  )
+  if (isPrivateV4 || host.startsWith('fe80') || host.startsWith('fc') || host.startsWith('fd')) {
+    return { ok: true, warning: `WEBHOOK_URL targets a private-network host (${host}) - make sure that is intentional` }
+  }
+  return { ok: true }
+}
+
+let webhookUrlChecked = false
+let webhookUrlUsable = true
+
+function webhookUrlIsUsable(url: string): boolean {
+  if (!webhookUrlChecked) {
+    webhookUrlChecked = true
+    const verdict = classifyWebhookUrl(url)
+    if (!verdict.ok) {
+      webhookUrlUsable = false
+      log.error({ reason: verdict.reason }, 'WEBHOOK_URL rejected - webhook dispatch disabled')
+    } else if (verdict.warning) {
+      log.warn(verdict.warning)
+    }
+  }
+  return webhookUrlUsable
+}
+
 async function postOnce(url: string, body: unknown): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS)
@@ -96,7 +145,7 @@ export function buildPayload(message: MessageInput) {
 }
 
 export function dispatchInbound(message: MessageInput): void {
-  if (!WEBHOOK_URL) return
+  if (!WEBHOOK_URL || !webhookUrlIsUsable(WEBHOOK_URL)) return
   const payload = buildPayload(message)
   postWithRetry(WEBHOOK_URL, payload).catch((err) => {
     log.error(
@@ -108,6 +157,7 @@ export function dispatchInbound(message: MessageInput): void {
 
 export async function dispatchTest(): Promise<{ ok: boolean; status?: number; error?: string }> {
   if (!WEBHOOK_URL) return { ok: false, error: 'WEBHOOK_URL not configured' }
+  if (!webhookUrlIsUsable(WEBHOOK_URL)) return { ok: false, error: 'WEBHOOK_URL rejected by validation (see logs)' }
   try {
     const res = await postOnce(WEBHOOK_URL, {
       event: 'test',

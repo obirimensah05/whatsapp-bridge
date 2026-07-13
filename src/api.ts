@@ -1,7 +1,7 @@
 import Fastify from 'fastify'
 import pino from 'pino'
 import { readFileSync, existsSync } from 'node:fs'
-import { resolve, basename } from 'node:path'
+import { resolve, basename, sep } from 'node:path'
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual } from 'node:crypto'
 
@@ -252,7 +252,8 @@ export async function startApi(): Promise<void> {
       }
       const path = resolve(`./data/media/${session}/${safeFile}`)
       const root = resolve('./data/media/')
-      if (!path.startsWith(root)) { reply.code(403).send({ error: 'forbidden' }); return }
+      // root + sep so a sibling dir like data/media-evil/ can never prefix-match.
+      if (!path.startsWith(root + sep)) { reply.code(403).send({ error: 'forbidden' }); return }
       if (!existsSync(path)) { reply.code(404).send({ error: 'not found' }); return }
       const ext = safeFile.split('.').pop()?.toLowerCase() ?? ''
       const mime = MIME_BY_EXT[ext] ?? 'application/octet-stream'
@@ -552,8 +553,8 @@ export async function startApi(): Promise<void> {
 
   // ---- webhook test ----
   app.post('/v1/webhook/test', async () => {
-    const result = await dispatchTest()
-    return { configured_url: WEBHOOK_URL, ...result }
+    // Don't echo WEBHOOK_URL back to callers - config stays server-side.
+    return dispatchTest()
   })
 
   await app.listen({ host: HOST, port: PORT })
