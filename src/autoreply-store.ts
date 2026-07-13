@@ -34,6 +34,9 @@ export interface AutoReplyAuditEntry {
     | 'auto_sent'
     | 'safety_blocked'
     | 'notify_chat_skipped'
+    | 'model_read'
+    | 'model_updated'
+    | 'model_test'
   data: Record<string, unknown>
 }
 

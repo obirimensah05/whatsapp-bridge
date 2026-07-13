@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-bridge",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Self-hosted WhatsApp bridge for AI agents — REST + MCP + web UI, built on Baileys.",
@@ -21,17 +21,16 @@
     "transcribe-backlog": "tsx src/transcribe-backlog.ts",
     "rotate-token": "tsx src/rotate-token.ts",
     "typecheck": "tsc --noEmit",
-
     "stop": "launchctl bootout gui/$(id -u)/local.whatsapp-bridge && echo 'whatsapp-bridge daemon stopped'",
     "restart": "launchctl bootout gui/$(id -u)/local.whatsapp-bridge 2>/dev/null; launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/local.whatsapp-bridge.plist && echo 'whatsapp-bridge daemon restarted'",
     "status": "echo 'whatsapp-bridge:'; launchctl print gui/$(id -u)/local.whatsapp-bridge 2>/dev/null | grep 'state =' || echo '  not loaded'; echo 'wa-autoreply:'; launchctl print gui/$(id -u)/local.wa-autoreply 2>/dev/null | grep 'state =' || echo '  not loaded'",
     "health": "TOKEN=$(grep '^API_TOKEN=' .env | head -1 | cut -d= -f2); curl -s -H \"Authorization: Bearer $TOKEN\" http://127.0.0.1:8080/v1/health; echo",
     "logs": "tail -n 80 -f logs/whatsapp-bridge.out.log",
     "logs:err": "tail -n 80 -f logs/whatsapp-bridge.err.log",
-
     "autoreply": "tsx src/autoreply-index.ts",
     "autoreply:dev": "tsx watch src/autoreply-index.ts",
     "autoreply:build-corpus": "tsx src/autoreply-corpus.ts",
+    "autoreply:model": "tsx src/autoreply-model-cli.ts",
     "autoreply:setup-notify": "tsx src/autoreply-setup-notify.ts",
     "autoreply:stop": "launchctl bootout gui/$(id -u)/local.wa-autoreply && echo 'autoreply sidecar stopped (launchd agent unloaded)'",
     "autoreply:start": "launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/local.wa-autoreply.plist && echo 'autoreply sidecar started'",

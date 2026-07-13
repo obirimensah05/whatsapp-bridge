@@ -9,6 +9,13 @@ import { AUTOREPLY_DEFAULT_SESSION, AUTOREPLY_HOST, AUTOREPLY_PORT, AUTOREPLY_TO
 import { expandJidGroup } from './db.js'
 import { generateDraftReply } from './autoreply-generate.js'
 import { isNotifyWhatsAppChat, sendDraftNotification, sendInboundNotification } from './autoreply-notify.js'
+import {
+  PROVIDERS,
+  describeProviders,
+  readModelConfig,
+  verifyModel,
+  writeModelConfig,
+} from './autoreply-model.js'
 import { evaluateAutoSendSafety } from './autoreply-safety.js'
 import {
   appendAudit,
@@ -46,6 +53,18 @@ const activeHoursSchema = z.object({
   start: z.string().regex(/^\d{2}:\d{2}$/),
   end: z.string().regex(/^\d{2}:\d{2}$/),
   timezone: z.string().min(1),
+})
+
+const modelConfigSchema = z.object({
+  provider: z.enum(PROVIDERS),
+  model: z.string().trim().min(1).nullable().optional(),
+  base_url: z.string().url().nullable().optional(),
+})
+
+const updateModelSchema = modelConfigSchema.extend({
+  // Persist even if the connectivity check fails. Off by default so a switch
+  // only lands when the provider + model actually respond.
+  force: z.boolean().optional(),
 })
 
 const updatePolicySchema = z.object({
@@ -178,6 +197,56 @@ app.put('/policy', async (req, reply) => {
   const next = writePolicy(nextInput)
   appendAudit('policy_updated', { ip: req.ip, previous, next })
   return next
+})
+
+app.get('/model', async (req, reply) => {
+  if (!authorized(req, reply)) return
+  const config = readModelConfig()
+  appendAudit('model_read', { ip: req.ip })
+  return { config, providers: describeProviders() }
+})
+
+app.post('/model/test', async (req, reply) => {
+  if (!authorized(req, reply)) return
+  // Body optional: test the given provider/model, or the active one when empty.
+  const parsed = modelConfigSchema.partial().safeParse(req.body ?? {})
+  if (!parsed.success) {
+    reply.code(400).send({ error: 'validation', issues: parsed.error.issues })
+    return
+  }
+  const current = readModelConfig()
+  const target = {
+    provider: parsed.data.provider ?? current.provider,
+    model: parsed.data.model ?? current.model,
+    base_url: parsed.data.base_url ?? current.base_url,
+  }
+  const result = await verifyModel(target)
+  appendAudit('model_test', { ip: req.ip, target, ok: result.ok, detail: result.detail })
+  reply.code(result.ok ? 200 : 502)
+  return result
+})
+
+app.put('/model', async (req, reply) => {
+  if (!authorized(req, reply)) return
+  const parsed = updateModelSchema.safeParse(req.body)
+  if (!parsed.success) {
+    reply.code(400).send({ error: 'validation', issues: parsed.error.issues })
+    return
+  }
+  const previous = readModelConfig()
+  const target = {
+    provider: parsed.data.provider,
+    model: parsed.data.model ?? null,
+    base_url: parsed.data.base_url ?? null,
+  }
+  const verify = await verifyModel(target)
+  if (!verify.ok && !parsed.data.force) {
+    reply.code(502)
+    return { error: 'not_connected', verify, hint: 'pass force:true to switch anyway' }
+  }
+  const next = writeModelConfig(target)
+  appendAudit('model_updated', { ip: req.ip, previous, next, verify, forced: Boolean(parsed.data.force) })
+  return { config: next, verify }
 })
 
 app.post('/webhook', async (req, reply) => {

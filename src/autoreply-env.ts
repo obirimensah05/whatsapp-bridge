@@ -3,9 +3,14 @@ import { join } from 'node:path'
 
 const ENV_PATH = '.env'
 
-function loadDotEnv(): void {
-  if (!existsSync(ENV_PATH)) return
-  for (const line of readFileSync(ENV_PATH, 'utf8').split('\n')) {
+// Exposed so the model layer can re-read newly-added provider keys from .env
+// without a full process restart (env is only loaded into process.env at boot).
+export const ENV_FILE_PATH = ENV_PATH
+
+export function readEnvFile(path: string): Record<string, string> {
+  if (!existsSync(path)) return {}
+  const out: Record<string, string> = {}
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     const eq = trimmed.indexOf('=')
@@ -18,6 +23,13 @@ function loadDotEnv(): void {
     ) {
       value = value.slice(1, -1)
     }
+    out[key] = value
+  }
+  return out
+}
+
+function loadDotEnv(): void {
+  for (const [key, value] of Object.entries(readEnvFile(ENV_PATH))) {
     if (!(key in process.env)) process.env[key] = value
   }
 }
@@ -66,9 +78,10 @@ export const AUTOREPLY_NOTIFY_CHANNEL: NotifyChannel | null = (() => {
 })()
 export const AUTOREPLY_STYLE_CORPUS_PATH = process.env.AUTOREPLY_STYLE_CORPUS_PATH?.trim() || join(AUTOREPLY_DATA_DIR, 'style-corpus.md')
 export const AUTOREPLY_CLAUDE_BIN = process.env.AUTOREPLY_CLAUDE_BIN?.trim() || 'claude'
+export const AUTOREPLY_CODEX_BIN = process.env.AUTOREPLY_CODEX_BIN?.trim() || 'codex'
 export const AUTOREPLY_MODEL = process.env.AUTOREPLY_MODEL?.trim() || 'sonnet'
 
-export const LLM_PROVIDERS = ['claude-cli', 'anthropic', 'openai'] as const
+export const LLM_PROVIDERS = ['claude-cli', 'codex-cli', 'anthropic', 'openai'] as const
 export type LlmProvider = (typeof LLM_PROVIDERS)[number]
 export const AUTOREPLY_LLM_PROVIDER: LlmProvider = (() => {
   const raw = process.env.AUTOREPLY_LLM_PROVIDER?.trim().toLowerCase() || 'claude-cli'

@@ -53,11 +53,14 @@ AUTOREPLY_DEFAULT_SESSION=main
 AUTOREPLY_SECOND_BRAIN_ROOT=/path/to/your/notes
 AUTOREPLY_MODEL=sonnet
 
-# LLM provider for draft generation - claude-cli (default) | anthropic | openai
+# LLM provider for draft generation - claude-cli (default) | codex-cli | anthropic | openai
+# NOTE: these env vars are only the FALLBACK default. Switch at runtime with
+#       `npm run autoreply:model -- use <provider> <model>` (writes model-config.json).
 # claude-cli: shells out to the local `claude` CLI (uses AUTOREPLY_CLAUDE_BIN / AUTOREPLY_MODEL).
-# anthropic:  Anthropic API via the official SDK (key from AUTOREPLY_LLM_API_KEY or ANTHROPIC_API_KEY;
+# codex-cli:  shells out to the local `codex` CLI (`codex exec`, uses AUTOREPLY_CODEX_BIN); no API key.
+# anthropic:  Anthropic API via the official SDK (key from ANTHROPIC_API_KEY or AUTOREPLY_LLM_API_KEY;
 #             model defaults to claude-opus-4-8).
-# openai:     ANY OpenAI-compatible chat-completions endpoint - OpenAI, OpenRouter, Groq,
+# openai:     ANY OpenAI-compatible chat-completions endpoint - OpenAI (gpt-5), OpenRouter, Groq,
 #             Mistral, Ollama, LM Studio... Set AUTOREPLY_LLM_BASE_URL + AUTOREPLY_LLM_MODEL.
 AUTOREPLY_LLM_PROVIDER=claude-cli
 AUTOREPLY_LLM_API_KEY=
@@ -189,29 +192,53 @@ This is the route `whatsapp-bridge` calls for inbound events. It now accepts bot
 
 ## LLM providers
 
-Draft generation goes through `src/autoreply-llm.ts` and supports three providers via `AUTOREPLY_LLM_PROVIDER`:
+Draft generation goes through `src/autoreply-llm.ts`, which dispatches to one of four backends. The active provider + model are **runtime-switchable** (see below) - the env vars are only the fallback default when no runtime config has been set.
 
 | Provider | What it uses | Needs |
 |---|---|---|
 | `claude-cli` (default) | the local `claude` CLI | Claude Code installed, no API key |
-| `anthropic` | Anthropic Messages API | `AUTOREPLY_LLM_API_KEY` (or `ANTHROPIC_API_KEY`); optional `AUTOREPLY_LLM_MODEL` (default `claude-opus-4-8`) |
-| `openai` | any OpenAI-compatible `/chat/completions` endpoint | `AUTOREPLY_LLM_MODEL` required; `AUTOREPLY_LLM_BASE_URL` (default `https://api.openai.com/v1`); key optional for local endpoints like Ollama |
+| `codex-cli` | the local `codex` CLI (`codex exec`) | Codex CLI installed + `codex login`, no API key |
+| `anthropic` | Anthropic Messages API | `ANTHROPIC_API_KEY` (or `AUTOREPLY_LLM_API_KEY`); model defaults to `claude-opus-4-8` |
+| `openai` | any OpenAI-compatible `/chat/completions` endpoint | model required (e.g. `gpt-5`); `OPENAI_API_KEY` (or `AUTOREPLY_LLM_API_KEY`); `AUTOREPLY_LLM_BASE_URL` (default `https://api.openai.com/v1`); key optional for local endpoints |
 
-Example - OpenRouter:
+### Switching the model from the terminal
+
+The active provider/model live in `data/autoreply/model-config.json` and are read fresh on every draft - **no restart needed** to switch (a restart is only needed to load new *code*).
 
 ```bash
-AUTOREPLY_LLM_PROVIDER=openai
-AUTOREPLY_LLM_BASE_URL=https://openrouter.ai/api/v1
-AUTOREPLY_LLM_API_KEY=sk-or-...
-AUTOREPLY_LLM_MODEL=anthropic/claude-sonnet-4.6
+npm run autoreply:model                       # show active model + all providers
+npm run autoreply:model -- list               # list providers + readiness
+npm run autoreply:model -- test openai gpt-5  # connectivity check without switching
+npm run autoreply:model -- use openai gpt-5   # switch (gated on a live connectivity check)
+npm run autoreply:model -- use codex-cli gpt-5-codex
+npm run autoreply:model -- use anthropic claude-opus-4-8 --key sk-ant-...
+npm run autoreply:model -- use openai llama3.1 --base-url http://127.0.0.1:11434/v1
 ```
 
-Example - local Ollama:
+`use` verifies the provider is authed/reachable **and** the model actually responds before persisting; it refuses to switch to a broken config (override with `--force`). `--key` writes the key into `.env` (chmod 600, gitignored) under the right var name. API keys are never written into `model-config.json`.
+
+### Switching over HTTP
+
+The autoreply server (`:8081`, bearer `AUTOREPLY_TOKEN`) exposes:
+
+- `GET /model` - active config + provider readiness
+- `POST /model/test` - `{provider?, model?, base_url?}` → connectivity result (defaults to the active config)
+- `PUT /model` - `{provider, model?, base_url?, force?}` → verifies then persists
+
+### Examples
 
 ```bash
-AUTOREPLY_LLM_PROVIDER=openai
-AUTOREPLY_LLM_BASE_URL=http://127.0.0.1:11434/v1
-AUTOREPLY_LLM_MODEL=llama3.1
+# GPT-5 via OpenAI
+npm run autoreply:model -- use openai gpt-5
+
+# GPT-5 via the Codex CLI (reuses ChatGPT/codex auth, no API key)
+npm run autoreply:model -- use codex-cli gpt-5
+
+# OpenRouter
+npm run autoreply:model -- use openai anthropic/claude-sonnet-4.6 --base-url https://openrouter.ai/api/v1 --key sk-or-...
+
+# Local Ollama (free, no key)
+npm run autoreply:model -- use openai llama3.1 --base-url http://127.0.0.1:11434/v1
 ```
 
 ## Context sources (second brain optional)
