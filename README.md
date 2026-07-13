@@ -195,6 +195,23 @@ This is an **agent-first** bridge: it's built to be operated by an AI agent, not
 
 The full tool surface (~20 tools) and the complete safety contract live in [AGENTS.md](AGENTS.md) — point your agent there when it needs detail. Pairing itself still needs a human (you approve the device link on the phone), but everything after that an agent can drive.
 
+## Rate limiting
+
+The API rate-limits its write/probe routes to bound the blast radius of a runaway agent loop or a leaked token — and, more importantly, to keep programmatic send velocity under WhatsApp's spam detection. Messages you type on your phone are never affected, and **reads are never limited** (`/v1/messages`, `/v1/conversations`, ... stay unlimited so agents can browse history freely).
+
+**Every limit is configurable in `.env`** — set a variable to `0` to disable that limit entirely:
+
+| Env var | Default | Governs |
+|---|---|---|
+| `RATE_LIMIT_SEND_PER_MIN` | `20` | burst cap on `POST /v1/send` |
+| `RATE_LIMIT_SEND_PER_HOUR` | `60` | sustained cap on `POST /v1/send` |
+| `RATE_LIMIT_CHECK_PER_MIN` | `300` | `GET /v1/check` (high so bulk contact import never throttles) |
+| `RATE_LIMIT_SEARCH_PER_MIN` | `60` | `/v1/contacts/search` + `/v1/groups/participants` |
+
+On breach the API returns `429` with a `Retry-After` header and `{"error":"rate_limited","rule":...,"retry_after_seconds":...}` — well-behaved agents back off automatically.
+
+**Why 60/hour on send?** WhatsApp publishes no official limit for personal accounts, but 2026 field observations across unofficial-client deployments converge on: **< 30 msgs/hour safe, 30–60/hr warning, > 60/hr danger** — plus penalties for low reply rates (< 15%), messaging many new contacts (> 50/day), and repeated identical messages (> 15/hr). Accounts on unofficial clients (like this bridge) are scrutinized harder. The default sustained cap sits at the edge of the warning zone; raise it only if you understand the ban risk to your number.
+
 ## Autoreply sidecar (optional)
 
 A separate local process (`src/autoreply-*.ts`) that turns the bridge into a draft-and-review (or fully automatic) reply machine. It runs alongside the daemon on its own port (`127.0.0.1:8081`) and talks to the bridge only over its local REST API.

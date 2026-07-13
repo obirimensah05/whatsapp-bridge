@@ -7,6 +7,7 @@ import { timingSafeEqual } from 'node:crypto'
 
 import { API_TOKEN, HOST, PORT } from './env.js'
 import { makeNonce, cspWithNonce, renderIndexWithNonce } from './csp.js'
+import { checkRateLimit } from './rate-limit.js'
 import { wa, normalizeJid } from './wa.js'
 import {
   listConversations,
@@ -206,6 +207,18 @@ export async function startApi(): Promise<void> {
     const ok = givenBuf.length === tokenBuf.length && timingSafeEqual(givenBuf, tokenBuf)
     if (!ok) {
       reply.code(401).send({ error: 'unauthorized' })
+      return
+    }
+
+    // Rate limit AFTER auth so unauthenticated requests can't consume budget.
+    // Bounds runaway agent loops / a leaked token and keeps API send velocity
+    // under WhatsApp's observed spam thresholds. See src/rate-limit.ts for the
+    // env knobs (RATE_LIMIT_*); reads are never limited.
+    const verdict = checkRateLimit(req.method, path)
+    if (!verdict.ok) {
+      log.warn({ path, rule: verdict.rule }, 'rate limit exceeded')
+      reply.header('Retry-After', String(verdict.retryAfterSeconds ?? 60))
+      reply.code(429).send({ error: 'rate_limited', rule: verdict.rule, retry_after_seconds: verdict.retryAfterSeconds })
       return
     }
   })
