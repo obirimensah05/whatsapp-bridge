@@ -1,4 +1,5 @@
 import { fetchWhatsAppHistoryContext } from './autoreply-context.js'
+import { fetchPersonalContext } from './autoreply-personal-context.js'
 import { AUTOREPLY_MIN_CONFIDENCE } from './autoreply-env.js'
 import { buildLinkContext } from './autoreply-link-context.js'
 import { completeDraftPrompt } from './autoreply-llm.js'
@@ -36,10 +37,10 @@ export async function generateDraftReply(params: {
 }): Promise<DraftReply> {
   const contextQuery = [params.contactName, params.incomingText].filter(Boolean).join('\n')
   const referenceContext = fetchWhatsAppHistoryContext({
-    query: contextQuery,
     chatJid: params.chatJid ?? null,
   })
-  const [linkContext, styleExamples] = await Promise.all([
+  const [personalContext, linkContext, styleExamples] = await Promise.all([
+    fetchPersonalContext(contextQuery).catch(() => ''),
     buildLinkContext(params.incomingText).catch(() => ''),
     fetchStyleExamples({ incomingText: params.incomingText, isGroup: Boolean(params.isGroup) }).catch(() => ''),
   ])
@@ -66,8 +67,11 @@ export async function generateDraftReply(params: {
     '<untrusted>',
     `Incoming message: ${params.incomingText}`,
     '',
-    'Reference context (prior WhatsApp history):',
-    referenceContext || '(no relevant reference context available)',
+    'Reference conversation (recent messages from this exact chat):',
+    referenceContext || '(no recent conversation context available)',
+    '',
+    'Personal context (relevant prior operator notes/history):',
+    personalContext || '(no directly relevant personal context available)',
     '',
     'Style examples retrieved from the isolated style-RAG index:',
     styleExamples || '(no relevant style examples available)',

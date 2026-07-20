@@ -100,5 +100,8 @@ export const AUTOREPLY_WA_API_BASE = process.env.AUTOREPLY_WA_API_BASE?.trim()
   || `http://${process.env.HOST ?? '127.0.0.1'}:${process.env.PORT ?? '8080'}/v1`
 export const AUTOREPLY_WA_API_TOKEN = process.env.AUTOREPLY_WA_API_TOKEN?.trim() || process.env.API_TOKEN?.trim() || null
 export const AUTOREPLY_DEFAULT_SESSION = process.env.AUTOREPLY_DEFAULT_SESSION?.trim() || 'main'
+export const AUTOREPLY_HISTORY_MESSAGE_LIMIT = process.env.AUTOREPLY_HISTORY_MESSAGE_LIMIT?.trim() || '50'
+export const AUTOREPLY_PERSONAL_CONTEXT_LIMIT = Number(process.env.AUTOREPLY_PERSONAL_CONTEXT_LIMIT ?? '3')
+export const AUTOREPLY_PERSONAL_CONTEXT_MAX_CHARS = Number(process.env.AUTOREPLY_PERSONAL_CONTEXT_MAX_CHARS ?? '2400')
 export const AUTOREPLY_SECOND_BRAIN_ROOT = process.env.AUTOREPLY_SECOND_BRAIN_ROOT?.trim()
   || ''

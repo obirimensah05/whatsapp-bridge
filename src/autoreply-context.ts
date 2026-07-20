@@ -1,15 +1,15 @@
-// Context from the bridge's own message store, used when no external notes
-// source ("second brain") is configured: the model gets recent conversation
-// history with the chat plus keyword matches from all stored messages, so
-// drafts are grounded in what was actually said before.
-//
-// Also auto-builds the style corpus from outbound (sent) messages when the
-// corpus file does not exist yet, so drafting works out of the box.
+// The drafter keeps a compact chronological window from the active chat. Older
+// facts are retrieved separately through the private pgvector second brain, so
+// we do not burn prompt space on broad keyword matches from unrelated chats.
 
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
-import { AUTOREPLY_DEFAULT_SESSION, AUTOREPLY_STYLE_CORPUS_PATH } from './autoreply-env.js'
+import {
+  AUTOREPLY_DEFAULT_SESSION,
+  AUTOREPLY_HISTORY_MESSAGE_LIMIT,
+  AUTOREPLY_STYLE_CORPUS_PATH,
+} from './autoreply-env.js'
 import { db, expandJidGroup } from './db.js'
 
 type HistoryRow = {
@@ -19,90 +19,55 @@ type HistoryRow = {
   content: string
 }
 
-const STOPWORDS = new Set([
-  'this', 'that', 'with', 'from', 'have', 'what', 'when', 'where', 'your', 'about',
-  'would', 'could', 'should', 'there', 'their', 'they', 'them', 'then', 'than',
-  'aber', 'auch', 'noch', 'sind', 'oder', 'nicht', 'eine', 'einen', 'schon',
-  'kannst', 'gerade', 'heute', 'morgen', 'danke', 'bitte', 'hallo',
-])
+const DEFAULT_HISTORY_MESSAGE_LIMIT = 50
+const MAX_HISTORY_MESSAGE_LIMIT = 500
+const HISTORY_ROW_MAX_CHARS = 100
 
-function extractKeywords(query: string, max = 5): string[] {
-  const words = query
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word.length >= 4 && !STOPWORDS.has(word))
-  return Array.from(new Set(words)).slice(0, max)
-}
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, '\\$&')
+export function resolveHistoryMessageLimit(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return DEFAULT_HISTORY_MESSAGE_LIMIT
+  if (!/^\d+$/.test(raw.trim())) return DEFAULT_HISTORY_MESSAGE_LIMIT
+  const parsed = Number(raw)
+  if (!Number.isSafeInteger(parsed) || parsed < 0) return DEFAULT_HISTORY_MESSAGE_LIMIT
+  return Math.min(parsed, MAX_HISTORY_MESSAGE_LIMIT)
 }
 
 function formatRow(row: HistoryRow): string {
   const who = row.direction === 'out' ? 'me' : 'them'
-  const text = row.content.replace(/\s+/g, ' ').trim().slice(0, 300)
+  const text = row.content.replace(/\s+/g, ' ').trim().slice(0, HISTORY_ROW_MAX_CHARS)
   return `- [${new Date(row.ts).toISOString().slice(0, 10)}] ${who}: ${text}`
 }
 
-// Synchronous by design - better-sqlite3 is synchronous and the queries are
-// index-backed and cheap.
+// Synchronous by design: better-sqlite3 is synchronous and this same-chat
+// indexed query is bounded by the owner-selected message limit.
 export function fetchWhatsAppHistoryContext(params: {
-  query: string
   chatJid?: string | null
   session?: string | null
+  messageLimit?: number
 }): string {
   const session = params.session?.trim() || AUTOREPLY_DEFAULT_SESSION
-  const sections: string[] = []
+  const messageLimit = params.messageLimit ?? resolveHistoryMessageLimit(AUTOREPLY_HISTORY_MESSAGE_LIMIT)
+  if (!params.chatJid || messageLimit === 0) return ''
 
   try {
-    if (params.chatJid) {
-      const jids = expandJidGroup(session, params.chatJid)
-      const placeholders = jids.map(() => '?').join(',')
-      const rows = db.prepare(`
-        SELECT ts, direction, chat_jid, COALESCE(body, transcript) AS content
-        FROM messages
-        WHERE session = ? AND chat_jid IN (${placeholders})
-          AND COALESCE(body, transcript) IS NOT NULL
-          AND TRIM(COALESCE(body, transcript)) != ''
-        ORDER BY ts DESC
-        LIMIT 25
-      `).all(session, ...jids) as HistoryRow[]
-      if (rows.length > 0) {
-        sections.push('Recent conversation with this chat (oldest first):')
-        sections.push(...rows.reverse().map(formatRow))
-      }
-    }
-
-    const keywords = extractKeywords(params.query)
-    const seen = new Set<string>()
-    const matches: string[] = []
-    for (const keyword of keywords) {
-      const pattern = `%${escapeLike(keyword)}%`
-      const rows = db.prepare(`
-        SELECT ts, direction, chat_jid, COALESCE(body, transcript) AS content
-        FROM messages
-        WHERE session = ?
-          AND (body LIKE ? ESCAPE '\\' OR transcript LIKE ? ESCAPE '\\')
-        ORDER BY ts DESC
-        LIMIT 4
-      `).all(session, pattern, pattern) as HistoryRow[]
-      for (const row of rows) {
-        const key = `${row.ts}:${row.content.slice(0, 80)}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        matches.push(formatRow(row))
-      }
-    }
-    if (matches.length > 0) {
-      sections.push('')
-      sections.push('Related past messages (keyword matches, newest first):')
-      sections.push(...matches.slice(0, 15))
-    }
+    const jids = expandJidGroup(session, params.chatJid)
+    const placeholders = jids.map(() => '?').join(',')
+    const rows = db.prepare(`
+      SELECT ts, direction, chat_jid, COALESCE(body, transcript) AS content
+      FROM messages
+      WHERE session = ? AND chat_jid IN (${placeholders})
+        AND COALESCE(body, transcript) IS NOT NULL
+        AND TRIM(COALESCE(body, transcript)) != ''
+      ORDER BY ts DESC
+      LIMIT ?
+    `).all(session, ...jids, messageLimit) as HistoryRow[]
+    if (rows.length === 0) return ''
+    return [
+      `Recent conversation with this chat (${rows.length} messages, oldest first):`,
+      ...rows.reverse().map(formatRow),
+    ].join('\n')
   } catch {
     return ''
   }
-
-  return sections.join('\n').slice(0, 6000)
 }
 
 // Builds a WhatsApp-only style corpus from the operator's own sent messages
