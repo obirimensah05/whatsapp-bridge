@@ -12,9 +12,24 @@ const SENSITIVE_PATTERNS = [
   /\b(schedule|reschedule|tomorrow|today|friday|monday|am|pm|calendar|meeting)\b/i,
 ]
 
+// These messages close a loop or simply acknowledge that something worked.
+// Obiri wants to answer them personally (or let them end naturally), rather
+// than having the autoreply manufacture one more message.
+const TRIVIAL_ACKNOWLEDGEMENT_PATTERNS = [
+  /^(?:yeah|yep|yup|yes|ok(?:ay)?|alright|sure|got it|makes sense|perfect|great|cool|nice|thanks|thank you|thx)[.!\s👍✅👌🙂]*$/i,
+  /^(?:yeah[,.\s]+)?i can hear you(?: now)?[.!\s👍✅👌🙂]*$/i,
+  /^(?:ja|jep|okay|ok|alles klar|verstanden|passt|perfekt|mega|danke|dankeschön)[.!\s👍✅👌🙂]*$/i,
+  /^(?:ja[,.\s]+)?ich kann dich hören(?: jetzt)?[.!\s👍✅👌🙂]*$/i,
+]
+
 export type AutoSendSafetyDecision = {
   ok: boolean
   reasons: string[]
+}
+
+export function isTrivialAcknowledgement(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, ' ')
+  return TRIVIAL_ACKNOWLEDGEMENT_PATTERNS.some((pattern) => pattern.test(normalized))
 }
 
 export function evaluateAutoSendSafety(params: {

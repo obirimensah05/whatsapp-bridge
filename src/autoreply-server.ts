@@ -16,7 +16,7 @@ import {
   verifyModel,
   writeModelConfig,
 } from './autoreply-model.js'
-import { evaluateAutoSendSafety } from './autoreply-safety.js'
+import { evaluateAutoSendSafety, isTrivialAcknowledgement } from './autoreply-safety.js'
 import {
   appendAudit,
   appendDraft,
@@ -363,6 +363,24 @@ app.post('/webhook', async (req, reply) => {
       policy_mode: policy.mode,
       decision,
       skipped: 'group_not_tagged',
+    }
+  }
+
+  // Do not draft or auto-send another acknowledgement after a conversation
+  // has already naturally closed. Inbound notifications still reach Obiri, so
+  // he can answer personally when he wants to.
+  if (decision.active && message?.direction !== 'out' && isTrivialAcknowledgement(incomingText)) {
+    appendAudit('safety_blocked', {
+      session: payload.session ?? null,
+      message_id: message?.id ?? null,
+      chat_jid: message?.chat_jid ?? null,
+      reason: 'trivial acknowledgement left for Obiri',
+    })
+    return {
+      ok: true,
+      policy_mode: policy.mode,
+      decision,
+      skipped: 'trivial_acknowledgement',
     }
   }
 

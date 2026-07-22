@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock, patch
 
 import wa_style_rag
 
@@ -49,6 +50,18 @@ class StyleRagFormatTests(unittest.TestCase):
         self.assertIn("Incoming: Bist du morgen erreichbar?", rendered)
         self.assertIn("Obiri replied: Ja safe, schick einfach kurz wann.", rendered)
         self.assertNotIn("private-id", rendered)
+
+
+class StyleRagUpsertTests(unittest.TestCase):
+    def test_upsert_payload_splits_large_index_requests_into_bounded_batches(self) -> None:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        payload = [{"source_outbound_message_id": str(index)} for index in range(101)]
+        with patch.object(wa_style_rag.requests, "post", return_value=response) as post:
+            wa_style_rag.upsert_payload("https://example.test", "test-key", payload, batch_size=50)
+
+        self.assertEqual(post.call_count, 3)
+        self.assertEqual([len(call.kwargs["json"]) for call in post.call_args_list], [50, 50, 1])
 
 
 if __name__ == "__main__":

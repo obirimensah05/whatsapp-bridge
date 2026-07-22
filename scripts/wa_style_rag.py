@@ -221,6 +221,20 @@ def candidates(limit: int) -> list[dict[str, Any]]:
     return result
 
 
+def upsert_payload(url: str, key: str, payload: list[dict[str, Any]], batch_size: int = 50) -> None:
+    """Write bounded batches to avoid gateway timeouts on large vector upserts."""
+    endpoint = f"{url}/rest/v1/onyankopon_whatsapp_style_examples?on_conflict=source_outbound_message_id"
+    headers = {**rest_headers(key), "Prefer": "resolution=merge-duplicates,return=minimal"}
+    for start in range(0, len(payload), batch_size):
+        response = requests.post(
+            endpoint,
+            headers=headers,
+            json=payload[start : start + batch_size],
+            timeout=120,
+        )
+        response.raise_for_status()
+
+
 def index_examples(limit: int) -> dict[str, Any]:
     load_runtime_env()
     url, key = require_config()
@@ -246,13 +260,7 @@ def index_examples(limit: int) -> dict[str, Any]:
                 "embedded_at": now,
             }
         )
-    response = requests.post(
-        f"{url}/rest/v1/onyankopon_whatsapp_style_examples?on_conflict=source_outbound_message_id",
-        headers={**rest_headers(key), "Prefer": "resolution=merge-duplicates,return=minimal"},
-        json=payload,
-        timeout=120,
-    )
-    response.raise_for_status()
+    upsert_payload(url, key, payload)
     return {"ok": True, "candidates": len(rows), "indexed": len(payload), "model": model}
 
 

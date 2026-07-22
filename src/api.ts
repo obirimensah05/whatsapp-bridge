@@ -301,7 +301,7 @@ export async function startApi(): Promise<void> {
       text?: string
       media_url?: string
       media_base64?: string
-      media_kind?: 'image' | 'video' | 'audio' | 'document'
+      media_kind?: 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker'
       mime?: string
       filename?: string
       caption?: string
@@ -353,6 +353,52 @@ export async function startApi(): Promise<void> {
         if (idemKey) idempotencyCache.set(idemKey, { ts: Date.now(), payload })
         return payload
       } catch (err) { internalError(reply, err, 'send') }
+    },
+  )
+
+  // ---- structured outbound messages ----
+  app.post<{ Body: { session?: string; to?: string; latitude?: number; longitude?: number; name?: string; address?: string } }>(
+    '/v1/send/location', async (req, reply) => {
+      const { to, latitude, longitude, name, address } = req.body
+      if (!to || latitude === undefined || longitude === undefined) { reply.code(400).send({ error: 'to, latitude, and longitude are required' }); return }
+      try { return { ok: true, ...await wa.sendLocation(req.body.session ?? 'main', to, { latitude, longitude, name, address }) } }
+      catch (err) { internalError(reply, err, 'send_location') }
+    },
+  )
+
+  app.post<{ Body: { session?: string; to?: string; display_name?: string; phone?: string } }>(
+    '/v1/send/contact', async (req, reply) => {
+      const { to, display_name, phone } = req.body
+      if (!to || !display_name || !phone) { reply.code(400).send({ error: 'to, display_name, and phone are required' }); return }
+      try { return { ok: true, ...await wa.sendContact(req.body.session ?? 'main', to, { displayName: display_name, phone }) } }
+      catch (err) { internalError(reply, err, 'send_contact') }
+    },
+  )
+
+  app.post<{ Body: { session?: string; to?: string; name?: string; options?: string[]; selectable_count?: number } }>(
+    '/v1/send/poll', async (req, reply) => {
+      const { to, name, options, selectable_count } = req.body
+      if (!to || !name || !options) { reply.code(400).send({ error: 'to, name, and options are required' }); return }
+      try { return { ok: true, ...await wa.sendPoll(req.body.session ?? 'main', to, { name, options, selectableCount: selectable_count }) } }
+      catch (err) { internalError(reply, err, 'send_poll') }
+    },
+  )
+
+  app.post<{ Body: { session?: string; chat_jid?: string; message_id?: string; text?: string } }>(
+    '/v1/messages/edit', async (req, reply) => {
+      const { chat_jid, message_id, text } = req.body
+      if (!chat_jid || !message_id || !text) { reply.code(400).send({ error: 'chat_jid, message_id, and text are required' }); return }
+      try { return await wa.editText(req.body.session ?? 'main', chat_jid, message_id, text) }
+      catch (err) { internalError(reply, err, 'edit_message') }
+    },
+  )
+
+  app.post<{ Body: { session?: string; from_chat_jid?: string; message_id?: string; to?: string } }>(
+    '/v1/messages/forward', async (req, reply) => {
+      const { from_chat_jid, message_id, to } = req.body
+      if (!from_chat_jid || !message_id || !to) { reply.code(400).send({ error: 'from_chat_jid, message_id, and to are required' }); return }
+      try { return { ok: true, ...await wa.forwardMessage(req.body.session ?? 'main', from_chat_jid, message_id, to) } }
+      catch (err) { internalError(reply, err, 'forward_message') }
     },
   )
 

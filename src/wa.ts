@@ -38,6 +38,7 @@ import {
 import { dispatchInbound } from './webhook.js'
 import { transcribeAudio, TranscribeError } from './transcribe.js'
 import { OPENAI_API_KEY, FORCE_HISTORY_SYNC_ON_RESTORE } from './env.js'
+import { buildContactPayload, buildLocationPayload, buildPollPayload, buildVoicePayload, parseMessageId } from './outbound.js'
 
 export function scanRegisteredSessions(authDir = './auth'): string[] {
   if (!existsSync(authDir)) return []
@@ -754,7 +755,7 @@ class WaManager {
   async sendMedia(
     name: string,
     to: string,
-    media: { kind: 'image' | 'video' | 'audio' | 'document'; data: Buffer; mime?: string; filename?: string },
+    media: { kind: 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker'; data: Buffer; mime?: string; filename?: string },
     opts: { caption?: string; quoted_id?: string; sent_by?: SentBy } = {},
   ): Promise<{ id: string; jid: string; ts: number }> {
     const sock = this.get(name)
@@ -768,6 +769,11 @@ class WaManager {
       payload.audio = media.data
       payload.mimetype = media.mime ?? 'audio/ogg; codecs=opus'
       payload.ptt = false
+    } else if (media.kind === 'voice') {
+      Object.assign(payload, buildVoicePayload(media.data, media.mime))
+    } else if (media.kind === 'sticker') {
+      payload.sticker = media.data
+      if (media.mime) payload.mimetype = media.mime
     } else if (media.kind === 'document') {
       payload.document = media.data
       payload.fileName = media.filename ?? 'file'
@@ -794,7 +800,7 @@ class WaManager {
     const dir = `./data/media/${name}`
     mkdirSync(dir, { recursive: true })
     const safeId = result.key.id.replace(/[^a-zA-Z0-9_-]/g, '_')
-    const ext = mediaExtension(media.mime ?? null, media.kind)
+    const ext = mediaExtension(media.mime ?? null, media.kind === 'voice' ? 'audio' : media.kind)
     const path = `${dir}/${safeId}.${ext}`
     try {
       writeFileSync(path, media.data)
@@ -808,7 +814,7 @@ class WaManager {
       chat_jid: jid,
       from_jid: sock.user?.id ?? 'unknown',
       direction: 'out',
-      type: media.kind,
+      type: media.kind === 'voice' ? 'audio' : media.kind,
       body: opts.caption ?? null,
       media_path: path,
       ts,
@@ -825,6 +831,63 @@ class WaManager {
       'sent media',
     )
     return { id: result.key.id, jid, ts }
+  }
+
+  private async sendStructured(
+    name: string,
+    to: string,
+    content: Record<string, unknown>,
+    type: string,
+    body: string | null = null,
+  ): Promise<{ id: string; jid: string; ts: number }> {
+    const sock = this.get(name)
+    if (!sock) throw new Error(`session "${name}" not connected`)
+    const jid = normalizeJid(to)
+    const result = await sock.sendMessage(jid, content as any)
+    if (!result?.key?.id) throw new Error('send failed: no message id returned')
+    const ts = Date.now()
+    insertMessage({
+      id: `${name}:${result.key.id}`, session: name, chat_jid: jid, from_jid: sock.user?.id ?? 'unknown',
+      direction: 'out', type, body, media_path: null, ts, raw_json: JSON.stringify(result),
+      sent_by: 'api', delivery_status: 'pending', quoted_id: null, media_mime: null, media_size: null,
+    })
+    return { id: result.key.id, jid, ts }
+  }
+
+  async sendLocation(name: string, to: string, input: Parameters<typeof buildLocationPayload>[0]) {
+    return this.sendStructured(name, to, buildLocationPayload(input), 'location', input.name ?? input.address ?? null)
+  }
+
+  async sendContact(name: string, to: string, input: Parameters<typeof buildContactPayload>[0]) {
+    return this.sendStructured(name, to, buildContactPayload(input), 'contact', input.displayName)
+  }
+
+  async sendPoll(name: string, to: string, input: Parameters<typeof buildPollPayload>[0]) {
+    return this.sendStructured(name, to, buildPollPayload(input), 'poll', input.name)
+  }
+
+  async editText(name: string, chatJid: string, messageId: string, text: string) {
+    const sock = this.get(name)
+    if (!sock) throw new Error(`session "${name}" not connected`)
+    if (!text.trim() || text.length > 4096) throw new Error('text must contain 1 to 4096 characters')
+    const jid = normalizeJid(chatJid)
+    const id = parseMessageId(messageId, name)
+    const result = await sock.sendMessage(jid, { text, edit: { remoteJid: jid, id, fromMe: true } } as any)
+    if (!result?.key?.id) throw new Error('edit failed: no message id returned')
+    markMessageEdited(`${name}:${id}`, text)
+    return { ok: true, id: result.key.id }
+  }
+
+  async forwardMessage(name: string, fromChatJid: string, messageId: string, to: string) {
+    const sock = this.get(name)
+    if (!sock) throw new Error(`session "${name}" not connected`)
+    const id = parseMessageId(messageId, name)
+    const { db } = await import('./db.js')
+    const row = db.prepare('SELECT raw_json, type, body FROM messages WHERE id = ? AND chat_jid = ? AND session = ?')
+      .get(`${name}:${id}`, normalizeJid(fromChatJid), name) as { raw_json: string | null; type: string; body: string | null } | undefined
+    if (!row?.raw_json) throw new Error('message is not available locally for forwarding')
+    const original = JSON.parse(row.raw_json)
+    return this.sendStructured(name, to, { forward: original }, row.type, row.body)
   }
 
   async sendReaction(
